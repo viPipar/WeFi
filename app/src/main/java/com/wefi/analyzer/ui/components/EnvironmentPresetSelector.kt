@@ -4,6 +4,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Apartment
+import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.Park
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -23,7 +27,17 @@ fun EnvironmentPresetSelector(
     modifier: Modifier = Modifier
 ) {
     val presets = EnvironmentPreset.entries
-    val labels = presets.map { "${it.label} (n=${it.exponent})" }
+    val items = presets.map { preset ->
+        val icon = when (preset) {
+            EnvironmentPreset.FREE_SPACE -> Icons.Rounded.Park
+            EnvironmentPreset.INDOOR_OFFICE -> Icons.Rounded.Home
+            EnvironmentPreset.OBSTRUCTED -> Icons.Rounded.Apartment
+        }
+        SegmentItem(
+            label = "${preset.label} (n=${preset.exponent})",
+            icon = icon
+        )
+    }
     val selectedIndex = presets.indexOf(selectedPreset).coerceAtLeast(0)
 
     Column(modifier = modifier.fillMaxWidth()) {
@@ -32,11 +46,11 @@ fun EnvironmentPresetSelector(
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            letterSpacing = 0.5.sp
+            letterSpacing = 0.8.sp
         )
         Spacer(modifier = Modifier.height(6.dp))
-        BlynkSegmentedControl(
-            items = labels,
+        BlynkSegmentedControlWithIcons(
+            items = items,
             selectedIndex = selectedIndex,
             onItemSelected = { onPresetSelected(presets[it]) }
         )

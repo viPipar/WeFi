@@ -1,10 +1,12 @@
 package com.wefi.analyzer.ui.screens.graph
 
 import android.graphics.Paint
+import android.graphics.Typeface
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -18,7 +20,10 @@ import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.res.ResourcesCompat
+import com.wefi.analyzer.R
 import com.wefi.analyzer.domain.model.WifiAccessPoint
 import com.wefi.analyzer.domain.util.ChannelFrequencyUtils
 import com.wefi.analyzer.ui.theme.BlynkBlue
@@ -36,6 +41,15 @@ fun ChannelGraphCanvas(
     val gridColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
     val textPrimaryColor = MaterialTheme.colorScheme.onSurface.toArgb()
     val textSecondaryColor = MaterialTheme.colorScheme.onSurfaceVariant.toArgb()
+
+    val context = LocalContext.current
+    val customTypeface = remember(context) {
+        try {
+            ResourcesCompat.getFont(context, R.font.plus_jakarta_sans) ?: Typeface.SANS_SERIF
+        } catch (e: Exception) {
+            Typeface.SANS_SERIF
+        }
+    }
 
     Canvas(modifier = modifier.fillMaxSize()) {
         val width = size.width
@@ -57,6 +71,7 @@ fun ChannelGraphCanvas(
         val dbmSteps = listOf(-20, -30, -40, -50, -60, -70, -80, -90, -100)
         val textPaint = Paint().apply {
             color = textSecondaryColor
+            typeface = customTypeface
             textSize = 11.dp.toPx()
             textAlign = Paint.Align.RIGHT
             isAntiAlias = true
@@ -102,6 +117,7 @@ fun ChannelGraphCanvas(
                 height - paddingBottom + 18.dp.toPx(),
                 Paint().apply {
                     color = textSecondaryColor
+                    typeface = customTypeface
                     textSize = 11.dp.toPx()
                     textAlign = Paint.Align.CENTER
                     isAntiAlias = true
@@ -183,7 +199,8 @@ fun ChannelGraphCanvas(
                     peakY = peakY,
                     topY = paddingTop,
                     bottomY = baseY,
-                    color = BlynkBlue
+                    color = BlynkBlue,
+                    typeface = customTypeface
                 )
             }
 
@@ -197,6 +214,7 @@ fun ChannelGraphCanvas(
                 labelY,
                 Paint().apply {
                     this.color = if (isConnected) BlynkBlue.toArgb() else textPrimaryColor
+                    this.typeface = customTypeface
                     textSize = 12.dp.toPx()
                     textAlign = Paint.Align.CENTER
                     isFakeBoldText = isConnected
@@ -212,7 +230,8 @@ private fun DrawScope.drawConnectedPlumbLine(
     peakY: Float,
     topY: Float,
     bottomY: Float,
-    color: Color
+    color: Color,
+    typeface: Typeface
 ) {
     val dashEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 8f), 0f)
 
@@ -243,7 +262,7 @@ private fun DrawScope.drawConnectedPlumbLine(
     )
 
     // Floating Badge Pill at top of the plumb line
-    val badgeWidth = 140.dp.toPx()
+    val badgeWidth = 120.dp.toPx()
     val badgeHeight = 22.dp.toPx()
     val badgeLeft = centerX - (badgeWidth / 2f)
     val badgeTop = topY - badgeHeight - 6.dp.toPx()
@@ -263,12 +282,21 @@ private fun DrawScope.drawConnectedPlumbLine(
         style = Stroke(width = 1.dp.toPx())
     )
 
+    // Real vector dot indicator instead of ASCII glyph
+    val dotCenterY = badgeTop + (badgeHeight / 2f)
+    drawCircle(
+        color = color,
+        radius = 3.dp.toPx(),
+        center = Offset(centerX - 36.dp.toPx(), dotCenterY)
+    )
+
     drawContext.canvas.nativeCanvas.drawText(
-        "● TERHUBUNG",
-        centerX,
-        badgeTop + (badgeHeight * 0.7f),
+        "TERHUBUNG",
+        centerX + 4.dp.toPx(),
+        badgeTop + (badgeHeight * 0.68f),
         Paint().apply {
             this.color = color.toArgb()
+            this.typeface = typeface
             textSize = 10.dp.toPx()
             textAlign = Paint.Align.CENTER
             isFakeBoldText = true

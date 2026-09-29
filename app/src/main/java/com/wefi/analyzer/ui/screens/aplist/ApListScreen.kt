@@ -19,6 +19,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.SignalCellularAlt
+import androidx.compose.material.icons.rounded.SortByAlpha
+import androidx.compose.material.icons.rounded.Straighten
 import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -41,7 +44,9 @@ import com.wefi.analyzer.domain.model.WifiAccessPoint
 import com.wefi.analyzer.ui.components.BlynkCard
 import com.wefi.analyzer.ui.components.BlynkMetricTile
 import com.wefi.analyzer.ui.components.BlynkSegmentedControl
+import com.wefi.analyzer.ui.components.BlynkSegmentedControlWithIcons
 import com.wefi.analyzer.ui.components.EnvironmentPresetSelector
+import com.wefi.analyzer.ui.components.SegmentItem
 import com.wefi.analyzer.ui.theme.BlynkBlue
 import com.wefi.analyzer.ui.theme.BlynkBlueTint
 import com.wefi.analyzer.ui.theme.QualityAmber
@@ -135,14 +140,18 @@ fun ApListScreen(
         Spacer(modifier = Modifier.height(10.dp))
 
         // 4. Sort Options
-        val sortLabels = listOf("⚡ Sinyal", "📏 Jarak", "🔤 Nama")
+        val sortItems = listOf(
+            SegmentItem(label = "Sinyal", icon = Icons.Rounded.SignalCellularAlt),
+            SegmentItem(label = "Jarak", icon = Icons.Rounded.Straighten),
+            SegmentItem(label = "Nama", icon = Icons.Rounded.SortByAlpha)
+        )
         val currentSortIndex = when (sortOption) {
             ApSortOption.SIGNAL_STRENGTH -> 0
             ApSortOption.DISTANCE -> 1
             ApSortOption.SSID_NAME -> 2
         }
-        BlynkSegmentedControl(
-            items = sortLabels,
+        BlynkSegmentedControlWithIcons(
+            items = sortItems,
             selectedIndex = currentSortIndex,
             onItemSelected = { index ->
                 val chosen = when (index) {

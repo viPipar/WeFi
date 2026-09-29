@@ -18,9 +18,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.NetworkCheck
+import androidx.compose.material.icons.rounded.SignalCellularAlt
 import androidx.compose.material.icons.rounded.Speed
+import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material.icons.rounded.Upload
 import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.Button
@@ -44,8 +48,8 @@ import com.wefi.analyzer.domain.model.SpeedTestStage
 import com.wefi.analyzer.ui.components.BlynkCard
 import com.wefi.analyzer.ui.components.BlynkMetricTile
 import com.wefi.analyzer.ui.theme.BlynkBlue
-import com.wefi.analyzer.ui.theme.BlynkBlueDark
 import com.wefi.analyzer.ui.theme.BlynkBlueTint
+import com.wefi.analyzer.ui.theme.QualityAmber
 import com.wefi.analyzer.ui.theme.QualityGreen
 
 @Composable
@@ -53,13 +57,13 @@ fun SpeedTestScreen(
     viewModel: SpeedTestViewModel,
     modifier: Modifier = Modifier
 ) {
-    val connectionInfo by viewModel.connectionInfo.collectAsState()
     val metrics by viewModel.metrics.collectAsState()
+    val connectionInfo by viewModel.connectionInfo.collectAsState()
     val connectedAp = connectionInfo.accessPoint
 
     val animatedProgress by animateFloatAsState(
         targetValue = metrics.progress,
-        label = "test_progress"
+        label = "gauge_progress"
     )
 
     Column(
@@ -139,7 +143,7 @@ fun SpeedTestScreen(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = if (connectedAp != null) "IP: ${connectionInfo.ipAddress} • Gateway: ${connectionInfo.gatewayIp}" else "Silakan hubungkan perangkat ke Wi-Fi",
+                        text = if (connectedAp != null) "IP: ${connectionInfo.ipAddress} | Gateway: ${connectionInfo.gatewayIp}" else "Silakan hubungkan perangkat ke Wi-Fi",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -147,25 +151,28 @@ fun SpeedTestScreen(
             }
 
             if (connectedAp != null) {
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(14.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     BlynkMetricTile(
-                        label = "Hardware Link Rate",
+                        label = "Link Rate",
                         value = "${connectionInfo.linkSpeedMbps}",
-                        unit = "Mbps"
+                        unit = "Mbps",
+                        icon = Icons.Rounded.Speed
                     )
                     BlynkMetricTile(
-                        label = "Kekuatan Sinyal",
+                        label = "Kekuatan",
                         value = "${connectedAp.rssi}",
-                        unit = "dBm"
+                        unit = "dBm",
+                        icon = Icons.Rounded.SignalCellularAlt
                     )
                     BlynkMetricTile(
-                        label = "Kanal Aktif",
+                        label = "Kanal",
                         value = "Ch ${connectedAp.channel}",
-                        unit = if (connectedAp.is5GHz) "5GHz" else "2.4GHz"
+                        unit = if (connectedAp.is5GHz) "5G" else "2.4G",
+                        icon = Icons.Rounded.Wifi
                     )
                 }
             }
@@ -187,11 +194,11 @@ fun SpeedTestScreen(
                     modifier = Modifier.size(200.dp)
                 ) {
                     CircularProgressIndicator(
-                        progress = animatedProgress,
+                        progress = { animatedProgress },
                         modifier = Modifier.fillMaxSize(),
                         color = BlynkBlue,
                         trackColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
-                        strokeWidth = 14.dp,
+                        strokeWidth = 14.dp
                     )
 
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -202,7 +209,7 @@ fun SpeedTestScreen(
                         }
                         Text(
                             text = if (displaySpeed > 0) "$displaySpeed" else "0.0",
-                            fontSize = 38.sp,
+                            style = MaterialTheme.typography.displayMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
@@ -243,20 +250,23 @@ fun SpeedTestScreen(
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
                     BlynkMetricTile(
-                        label = "Latensi (Ping)",
+                        label = "Latensi",
                         value = "${metrics.pingMs}",
                         unit = "ms",
-                        valueColor = if (metrics.pingMs > 0 && metrics.pingMs < 40) QualityGreen else MaterialTheme.colorScheme.onSurface
+                        icon = Icons.Rounded.Timer,
+                        valueColor = if (metrics.pingMs in 1..40) QualityGreen else MaterialTheme.colorScheme.onSurface
                     )
                     BlynkMetricTile(
                         label = "Jitter",
                         value = "${metrics.jitterMs}",
-                        unit = "ms"
+                        unit = "ms",
+                        icon = Icons.Rounded.GraphicEq
                     )
                     BlynkMetricTile(
                         label = "Upload Riil",
                         value = "${metrics.uploadMbps}",
-                        unit = "Mbps"
+                        unit = "Mbps",
+                        icon = Icons.Rounded.CloudUpload
                     )
                 }
             }
