@@ -28,14 +28,24 @@ jobs:
       run: chmod +x gradlew
 
     - name: Run Unit Tests
-      run: ./gradlew testDebugUnitTest --no-daemon --stacktrace --info
+      run: |
+        if ! ./gradlew testDebugUnitTest --no-daemon --stacktrace > test_run.log 2>&1; then
+          echo "## ❌ Unit Test / Compilation Error" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          tail -n 80 test_run.log >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat test_run.log
+          exit 1
+        fi
 
     - name: Upload Test Report on Failure
       if: failure()
       uses: actions/upload-artifact@v4
       with:
         name: test-reports
-        path: app/build/reports/tests/
+        path: |
+          test_run.log
+          app/build/reports/
 
     - name: Build Debug APK
       run: ./gradlew assembleDebug --no-daemon --stacktrace

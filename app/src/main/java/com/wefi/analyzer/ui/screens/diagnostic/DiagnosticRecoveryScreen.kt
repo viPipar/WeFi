@@ -24,11 +24,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -86,7 +86,7 @@ fun DiagnosticRecoveryScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = Icons.Default.Info,
+                    imageVector = Icons.Rounded.Info,
                     contentDescription = "Diagnostic Info",
                     tint = BlynkBlue,
                     modifier = Modifier.size(36.dp)
@@ -175,7 +175,7 @@ fun DiagnosticRecoveryScreen(
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Icon(
-                                imageVector = if (isDetailsExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                imageVector = if (isDetailsExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
                                 contentDescription = null,
                                 tint = BlynkBlue,
                                 modifier = Modifier.size(18.dp)
@@ -222,7 +222,7 @@ fun DiagnosticRecoveryScreen(
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Icon(
-                    imageVector = Icons.Default.Share,
+                    imageVector = Icons.Rounded.Share,
                     contentDescription = "Salin",
                     tint = BlynkBlue,
                     modifier = Modifier.size(18.dp)
@@ -249,7 +249,7 @@ fun DiagnosticRecoveryScreen(
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Icon(
-                    imageVector = Icons.Default.Refresh,
+                    imageVector = Icons.Rounded.Refresh,
                     contentDescription = "Muat Ulang",
                     tint = Color.White,
                     modifier = Modifier.size(18.dp)
