@@ -102,7 +102,7 @@ private class FakeWifiScannerRepository : WifiScannerRepository {
     private val _isScanning = MutableStateFlow(false)
     override val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
 
-    private val _selectedPreset = MutableStateFlow(EnvironmentPreset.LAB_CAMPUS)
+    private val _selectedPreset = MutableStateFlow(EnvironmentPreset.INDOOR)
     override val selectedPreset: StateFlow<EnvironmentPreset> = _selectedPreset.asStateFlow()
 
     private val _isWifiEnabled = MutableStateFlow(true)

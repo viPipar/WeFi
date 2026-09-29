@@ -11,10 +11,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flow
 
-/**
- * Implementasi repository pengujian dan audit router laboratorium.
- * Membatasi pengujian hanya pada SSID terdaftar dalam whitelist lab resmi.
- */
 class LabRouterAuditRepositoryImpl : LabRouterAuditRepository {
 
     override val authorizedSsids: Set<String> = setOf(
@@ -32,7 +28,6 @@ class LabRouterAuditRepositoryImpl : LabRouterAuditRepository {
     private val _auditLogs = MutableStateFlow<List<LabAuditLogEntry>>(emptyList())
     override val auditLogs: StateFlow<List<LabAuditLogEntry>> = _auditLogs.asStateFlow()
 
-    // Mock kredensial yang sah untuk simulasi pengujian lab terotorisasi
     private val mockValidCredentials: Map<String, List<String>> = mapOf(
         "ilmukomputeripb" to listOf("ilmukomputeripb", "labkomputer123", "ipbjuara"),
         "Lab-IoT-01" to listOf("Lab-IoT-01", "iotlab2026"),
