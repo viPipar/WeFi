@@ -78,21 +78,23 @@ class SpeedTestRepositoryImpl(
 
             client.newCall(request).execute().use { response ->
                 val source = response.body?.source()
-                val buffer = ByteArray(8192)
-                var bytesRead: Int
+                if (source != null) {
+                    val buffer = ByteArray(8192)
+                    var bytesRead = 0
 
-                while (source != null && source.read(buffer).also { bytesRead = it } != -1) {
-                    totalBytesRead += bytesRead
-                    val elapsedSec = (System.currentTimeMillis() - startDownloadTime) / 1000.0
-                    if (elapsedSec > 0.3) {
-                        val currentMbps = (totalBytesRead * 8.0) / (elapsedSec * 1_000_000.0)
-                        downloadSpeedMbps = round(currentMbps * 10) / 10
-                        emit(
-                            currentMetrics.copy(
-                                downloadMbps = downloadSpeedMbps,
-                                progress = (0.25f + (totalBytesRead.toFloat() / 10_000_000f) * 0.45f).coerceAtMost(0.70f)
+                    while (source.read(buffer).also { bytesRead = it } != -1) {
+                        totalBytesRead += bytesRead
+                        val elapsedSec = (System.currentTimeMillis() - startDownloadTime) / 1000.0
+                        if (elapsedSec > 0.3) {
+                            val currentMbps = (totalBytesRead * 8.0) / (elapsedSec * 1_000_000.0)
+                            downloadSpeedMbps = round(currentMbps * 10) / 10
+                            emit(
+                                currentMetrics.copy(
+                                    downloadMbps = downloadSpeedMbps,
+                                    progress = (0.25f + (totalBytesRead.toFloat() / 10_000_000f) * 0.45f).coerceAtMost(0.70f)
+                                )
                             )
-                        )
+                        }
                     }
                 }
             }
