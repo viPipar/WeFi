@@ -83,8 +83,8 @@ com.wefi.analyzer
 ### Menjalankan Proyek:
 ```bash
 # Clone repositori
-git clone https://github.com/viPipar/weFi.git
-cd weFi
+git clone https://github.com/viPipar/WeFi.git
+cd WeFi
 
 # Jalankan Unit Tests Domain
 ./gradlew testDebugUnitTest
@@ -92,6 +92,17 @@ cd weFi
 # Rakit APK Debug
 ./gradlew assembleDebug
 ```
+
+---
+
+## 📲 Unduh & Pasang Langsung di Smartphone Android
+
+Anda dapat langsung mengunduh dan memasang aplikasi **weFi** ke HP tanpa perlu install Android Studio di laptop:
+1. Buka tautan ini di browser smartphone Anda: **[Unduh weFi APK (GitHub Releases)](https://github.com/viPipar/WeFi/releases)**
+2. Pada rilis terbaru, klik berkas **`app-debug.apk`** pada bagian *Assets*.
+3. Setelah selesai diunduh, ketuk file tersebut dan pilih **Install** (izinkan *"Install unknown apps"* pada browser HP jika diminta).
+4. Buka aplikasi **weFi**, izinkan akses lokasi/perangkat sekitar, dan aplikasi siap digunakan untuk analisis frekuensi radio!
+
 
 ---
 
