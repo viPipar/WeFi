@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.sp
 import com.wefi.analyzer.domain.model.WifiAccessPoint
 import com.wefi.analyzer.ui.components.BlynkCard
 import com.wefi.analyzer.ui.components.BlynkMetricTile
+import com.wefi.analyzer.ui.components.BlynkSegmentedControl
 import com.wefi.analyzer.ui.components.EnvironmentPresetSelector
 import com.wefi.analyzer.ui.theme.BlynkBlue
 import com.wefi.analyzer.ui.theme.BlynkBlueTint
@@ -55,6 +56,7 @@ fun ApListScreen(
     val apList by viewModel.filteredAps.collectAsState()
     val selectedPreset by viewModel.selectedPreset.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
+    val sortOption by viewModel.sortOption.collectAsState()
 
     Column(
         modifier = modifier
@@ -130,9 +132,31 @@ fun ApListScreen(
             singleLine = true
         )
 
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // 4. Sort Options
+        val sortLabels = listOf("⚡ Sinyal", "📏 Jarak", "🔤 Nama")
+        val currentSortIndex = when (sortOption) {
+            ApSortOption.SIGNAL_STRENGTH -> 0
+            ApSortOption.DISTANCE -> 1
+            ApSortOption.SSID_NAME -> 2
+        }
+        BlynkSegmentedControl(
+            items = sortLabels,
+            selectedIndex = currentSortIndex,
+            onItemSelected = { index ->
+                val chosen = when (index) {
+                    0 -> ApSortOption.SIGNAL_STRENGTH
+                    1 -> ApSortOption.DISTANCE
+                    else -> ApSortOption.SSID_NAME
+                }
+                viewModel.setSortOption(chosen)
+            }
+        )
+
         Spacer(modifier = Modifier.height(12.dp))
 
-        // 4. Access Point List or Empty State
+        // 5. Access Point List or Empty State
         val isWifiEnabled by viewModel.isWifiEnabled.collectAsState()
         val context = androidx.compose.ui.platform.LocalContext.current
 
