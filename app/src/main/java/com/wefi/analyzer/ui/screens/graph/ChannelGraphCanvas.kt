@@ -177,7 +177,7 @@ fun ChannelGraphCanvas(
                 centerX,
                 labelY,
                 Paint().apply {
-                    color = if (isConnected) BlynkBlue.toArgb() else textPrimaryColor
+                    this.color = if (isConnected) BlynkBlue.toArgb() else textPrimaryColor
                     textSize = 12.dp.toPx()
                     textAlign = Paint.Align.CENTER
                     isFakeBoldText = isConnected

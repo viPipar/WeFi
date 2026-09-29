@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 
 class ChannelGraphViewModel(
@@ -37,11 +38,9 @@ class ChannelGraphViewModel(
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val connectedBssid: StateFlow<String?> = combine(
-        connectionRepository.connectionInfo
-    ) { info ->
-        info.accessPoint?.bssid
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    val connectedBssid: StateFlow<String?> = connectionRepository.connectionInfo
+        .map { it.accessPoint?.bssid }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     fun setBand(band: Double) {
         _selectedBand.value = band
