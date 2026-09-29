@@ -12,7 +12,10 @@ data class ConnectedNetworkInfo(
     val ipAddress: String = "0.0.0.0",
     val gatewayIp: String = "0.0.0.0",
     val dns1: String = "0.0.0.0"
-)
+) {
+    val isConnected: Boolean
+        get() = accessPoint != null && (accessPoint.isConnected || ipAddress != "0.0.0.0")
+}
 
 interface CurrentConnectionRepository {
     val connectionInfo: StateFlow<ConnectedNetworkInfo>
