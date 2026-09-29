@@ -21,6 +21,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import com.wefi.analyzer.data.repository.CurrentConnectionRepositoryImpl
 import com.wefi.analyzer.data.repository.SpeedTestRepositoryImpl
@@ -84,11 +85,13 @@ fun MainAppShell(
     var isHelpDrawerOpen by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
+    val context = LocalContext.current
+
     // Android Runtime Permissions Launcher
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        val isGranted = permissions.values.all { it }
+        val isGranted = permissions.values.any { it }
         if (isGranted) {
             onTriggerInitialScan()
         }
@@ -102,7 +105,16 @@ fun MainAppShell(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissionsToRequest.add(Manifest.permission.NEARBY_WIFI_DEVICES)
         }
-        permissionLauncher.launch(permissionsToRequest.toTypedArray())
+
+        val notGranted = permissionsToRequest.filter {
+            ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
+        }
+
+        if (notGranted.isEmpty()) {
+            onTriggerInitialScan()
+        } else {
+            permissionLauncher.launch(notGranted.toTypedArray())
+        }
     }
 
     Scaffold(

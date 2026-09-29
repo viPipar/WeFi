@@ -7,6 +7,7 @@ import android.content.IntentFilter
 import android.net.wifi.ScanResult
 import android.net.wifi.WifiManager
 import android.os.Build
+import androidx.core.content.ContextCompat
 import com.wefi.analyzer.domain.model.EnvironmentPreset
 import com.wefi.analyzer.domain.model.WifiAccessPoint
 import com.wefi.analyzer.domain.repository.WifiScannerRepository
@@ -52,7 +53,16 @@ class WifiScannerRepositoryImpl(
 
     init {
         val intentFilter = IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION)
-        context.registerReceiver(wifiScanReceiver, intentFilter)
+        try {
+            ContextCompat.registerReceiver(
+                context,
+                wifiScanReceiver,
+                intentFilter,
+                ContextCompat.RECEIVER_EXPORTED
+            )
+        } catch (e: Exception) {
+            // Guard against any OEM receiver registration exception
+        }
         // Initial fetch from system cache
         processScanResults()
     }
@@ -61,7 +71,12 @@ class WifiScannerRepositoryImpl(
         if (_isScanning.value) return
         _isScanning.value = true
 
-        val success = wifiManager?.startScan() ?: false
+        val success = try {
+            wifiManager?.startScan() ?: false
+        } catch (e: Exception) {
+            false
+        }
+
         if (!success) {
             // Throttled by Android OS or failure, process existing cached results
             _isScanning.value = false
@@ -78,13 +93,17 @@ class WifiScannerRepositoryImpl(
         repositoryScope.launch {
             val rawResults = try {
                 wifiManager?.scanResults ?: emptyList()
-            } catch (e: SecurityException) {
+            } catch (e: Exception) {
                 emptyList()
             }
 
             val preset = _selectedPreset.value
-            val mappedList = rawResults.map { scan ->
-                mapScanResultToDomain(scan, preset)
+            val mappedList = rawResults.mapNotNull { scan ->
+                try {
+                    mapScanResultToDomain(scan, preset)
+                } catch (e: Exception) {
+                    null
+                }
             }.sortedByDescending { it.rssi }
 
             _scanResults.value = mappedList

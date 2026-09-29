@@ -45,6 +45,10 @@ fun ChannelGraphCanvas(
         val graphWidth = width - paddingLeft - paddingRight
         val graphHeight = height - paddingTop - paddingBottom
 
+        if (graphWidth <= 0f || graphHeight <= 0f || channels.isEmpty()) {
+            return@Canvas
+        }
+
         // 1. Draw dBm Grid Lines (-20 to -100 dBm)
         val dbmSteps = listOf(-20, -30, -40, -50, -60, -70, -80, -90, -100)
         val textPaint = Paint().apply {

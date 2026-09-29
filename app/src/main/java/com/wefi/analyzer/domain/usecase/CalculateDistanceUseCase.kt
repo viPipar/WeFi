@@ -19,7 +19,9 @@ class CalculateDistanceUseCase {
         val a0 = if (frequencyMhz >= 5000) -45.0 else -40.0
         val exponent = (a0 - rssi.toDouble()) / (10.0 * preset.exponent)
         val rawDistance = 10.0.pow(exponent)
+        if (rawDistance.isNaN() || rawDistance.isInfinite()) return 1.0
+        val clamped = rawDistance.coerceIn(0.1, 999.0)
         // Dibulatkan ke 1 desimal presisi
-        return round(rawDistance * 10.0) / 10.0
+        return round(clamped * 10.0) / 10.0
     }
 }

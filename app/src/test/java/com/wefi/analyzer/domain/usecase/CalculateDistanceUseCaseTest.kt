@@ -28,4 +28,12 @@ class CalculateDistanceUseCaseTest {
         val distance = useCase.execute(rssi = -45, frequencyMhz = 5180, preset = EnvironmentPreset.OUTDOOR)
         assertEquals(1.0, distance, 0.05)
     }
+
+    @Test
+    fun `extreme RSSI values are bounded safely between 0_1 and 999 meters`() {
+        val veryClose = useCase.execute(rssi = 10, frequencyMhz = 2412, preset = EnvironmentPreset.OUTDOOR)
+        val veryFar = useCase.execute(rssi = -200, frequencyMhz = 2412, preset = EnvironmentPreset.OUTDOOR)
+        assertEquals(0.1, veryClose, 0.01)
+        assertEquals(999.0, veryFar, 0.01)
+    }
 }
