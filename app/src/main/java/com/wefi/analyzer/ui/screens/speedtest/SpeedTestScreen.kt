@@ -187,15 +187,10 @@ fun SpeedTestScreen(
                     modifier = Modifier.size(200.dp)
                 ) {
                     CircularProgressIndicator(
-                        progress = { 1f },
-                        modifier = Modifier.fillMaxSize(),
-                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
-                        strokeWidth = 14.dp,
-                    )
-                    CircularProgressIndicator(
-                        progress = { animatedProgress },
+                        progress = animatedProgress,
                         modifier = Modifier.fillMaxSize(),
                         color = BlynkBlue,
+                        trackColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
                         strokeWidth = 14.dp,
                     )
 

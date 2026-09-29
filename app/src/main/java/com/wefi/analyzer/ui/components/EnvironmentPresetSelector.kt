@@ -22,7 +22,7 @@ fun EnvironmentPresetSelector(
     onPresetSelected: (EnvironmentPreset) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val presets = EnvironmentPreset.values()
+    val presets = EnvironmentPreset.entries
     val labels = presets.map { "${it.label} (n=${it.exponent})" }
     val selectedIndex = presets.indexOf(selectedPreset).coerceAtLeast(0)
 
