@@ -254,7 +254,7 @@ fun SpeedTestScreen(
                         value = "${metrics.pingMs}",
                         unit = "ms",
                         icon = Icons.Rounded.Timer,
-                        valueColor = if (metrics.pingMs in 1..40) QualityGreen else MaterialTheme.colorScheme.onSurface
+                        valueColor = if (metrics.pingMs in 0.1..40.0) QualityGreen else MaterialTheme.colorScheme.onSurface
                     )
                     BlynkMetricTile(
                         label = "Jitter",

@@ -29,9 +29,9 @@ fun EnvironmentPresetSelector(
     val presets = EnvironmentPreset.entries
     val items = presets.map { preset ->
         val icon = when (preset) {
-            EnvironmentPreset.FREE_SPACE -> Icons.Rounded.Park
-            EnvironmentPreset.INDOOR_OFFICE -> Icons.Rounded.Home
-            EnvironmentPreset.OBSTRUCTED -> Icons.Rounded.Apartment
+            EnvironmentPreset.OUTDOOR -> Icons.Rounded.Park
+            EnvironmentPreset.INDOOR -> Icons.Rounded.Home
+            EnvironmentPreset.CONCRETE -> Icons.Rounded.Apartment
         }
         SegmentItem(
             label = "${preset.label} (n=${preset.exponent})",
