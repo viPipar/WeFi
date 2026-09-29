@@ -18,9 +18,12 @@ import com.wefi.analyzer.domain.usecase.ParsePhyCapabilitiesUseCase
 import com.wefi.analyzer.domain.util.ChannelFrequencyUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 class WifiScannerRepositoryImpl(
@@ -53,7 +56,8 @@ class WifiScannerRepositoryImpl(
 
     private var isReceiverRegistered = false
     private var lastScanTriggerTime = 0L
-    private val MIN_SCAN_INTERVAL_MS = 10_000L // 10s debounce against Android foreground scan throttle
+    private val MIN_SCAN_INTERVAL_MS = 6000L // 6 detik untuk auto-refresh berkala yang dinamis & aman dari throttle OS
+    private var periodicScanJob: Job? = null
 
     private val wifiScanReceiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context?, intent: Intent?) {
@@ -92,6 +96,24 @@ class WifiScannerRepositoryImpl(
         }
         // Initial fetch from system cache
         processScanResults()
+        startPeriodicScan()
+    }
+
+    fun startPeriodicScan() {
+        periodicScanJob?.cancel()
+        periodicScanJob = repositoryScope.launch {
+            while (isActive) {
+                delay(MIN_SCAN_INTERVAL_MS)
+                if (_isWifiEnabled.value) {
+                    startScan()
+                }
+            }
+        }
+    }
+
+    fun stopPeriodicScan() {
+        periodicScanJob?.cancel()
+        periodicScanJob = null
     }
 
     private fun checkIsWifiEnabled(): Boolean {
@@ -113,7 +135,7 @@ class WifiScannerRepositoryImpl(
 
         val now = System.currentTimeMillis()
         if (now - lastScanTriggerTime < MIN_SCAN_INTERVAL_MS) {
-            // Dalam masa cooldown throttling Android OS: segera update dengan cache terbaru tanpa request hardware
+            // Dalam masa cooldown: tetap perbarui data dari cache terkini
             processScanResults()
             return
         }
@@ -129,7 +151,7 @@ class WifiScannerRepositoryImpl(
         }
 
         if (!success) {
-            // Throttled by Android OS or failure, process existing cached results immediately
+            // OS scan throttle atau failure: segera perbarui dari cache tanpa macet
             _isScanning.value = false
             processScanResults()
         }
@@ -141,6 +163,7 @@ class WifiScannerRepositoryImpl(
     }
 
     override fun teardown() {
+        stopPeriodicScan()
         if (isReceiverRegistered) {
             try {
                 context.unregisterReceiver(wifiScanReceiver)
