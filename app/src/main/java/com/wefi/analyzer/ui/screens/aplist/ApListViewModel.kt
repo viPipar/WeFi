@@ -23,6 +23,7 @@ class ApListViewModel(
 ) : ViewModel() {
 
     val selectedPreset = scannerRepository.selectedPreset
+    val isWifiEnabled: StateFlow<Boolean> = scannerRepository.isWifiEnabled
 
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()

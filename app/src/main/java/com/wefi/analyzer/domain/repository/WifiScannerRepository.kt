@@ -11,6 +11,7 @@ interface WifiScannerRepository {
     val scanResults: StateFlow<List<WifiAccessPoint>>
     val isScanning: StateFlow<Boolean>
     val selectedPreset: StateFlow<EnvironmentPreset>
+    val isWifiEnabled: StateFlow<Boolean>
 
     fun startScan()
     fun setEnvironmentPreset(preset: EnvironmentPreset)

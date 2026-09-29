@@ -24,6 +24,8 @@ class ChannelGraphViewModel(
     private val _isPaused = MutableStateFlow(false)
     val isPaused: StateFlow<Boolean> = _isPaused.asStateFlow()
 
+    val isWifiEnabled: StateFlow<Boolean> = scannerRepository.isWifiEnabled
+
     private var frozenResults: List<WifiAccessPoint> = emptyList()
 
     val displayResults: StateFlow<List<WifiAccessPoint>> = combine(

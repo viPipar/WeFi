@@ -8,6 +8,7 @@ import android.net.NetworkRequest
 import android.net.wifi.WifiInfo
 import android.net.wifi.WifiManager
 import android.os.Build
+import android.util.Log
 import com.wefi.analyzer.domain.model.WifiAccessPoint
 import com.wefi.analyzer.domain.repository.ConnectedNetworkInfo
 import com.wefi.analyzer.domain.repository.CurrentConnectionRepository
@@ -15,17 +16,30 @@ import com.wefi.analyzer.domain.util.ChannelFrequencyUtils
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import java.net.InetAddress
 
 class CurrentConnectionRepositoryImpl(
     private val context: Context
 ) : CurrentConnectionRepository {
 
-    private val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-    private val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+    private val connectivityManager = try {
+        context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+    } catch (e: Exception) {
+        Log.w(TAG, "Gagal mendapatkan ConnectivityManager", e)
+        null
+    }
+
+    private val wifiManager = try {
+        context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+    } catch (e: Exception) {
+        Log.w(TAG, "Gagal mendapatkan WifiManager", e)
+        null
+    }
 
     private val _connectionInfo = MutableStateFlow(ConnectedNetworkInfo())
     override val connectionInfo: StateFlow<ConnectedNetworkInfo> = _connectionInfo.asStateFlow()
+
+    private var activeWifiInfoFromCapabilities: WifiInfo? = null
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
     init {
         try {
@@ -33,32 +47,51 @@ class CurrentConnectionRepositoryImpl(
                 .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
                 .build()
 
-            connectivityManager?.registerNetworkCallback(
-                networkRequest,
-                object : ConnectivityManager.NetworkCallback() {
-                    override fun onAvailable(network: Network) {
-                        refreshConnectionInfo()
-                    }
-
-                    override fun onLost(network: Network) {
-                        _connectionInfo.value = ConnectedNetworkInfo()
-                    }
-
-                    override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
-                        refreshConnectionInfo()
-                    }
+            val callback = object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) {
+                    refreshConnectionInfo()
                 }
-            )
+
+                override fun onLost(network: Network) {
+                    activeWifiInfoFromCapabilities = null
+                    _connectionInfo.value = ConnectedNetworkInfo()
+                }
+
+                override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        val transport = capabilities.transportInfo
+                        if (transport is WifiInfo) {
+                            activeWifiInfoFromCapabilities = transport
+                        }
+                    }
+                    refreshConnectionInfo()
+                }
+            }
+
+            networkCallback = callback
+            connectivityManager?.registerNetworkCallback(networkRequest, callback)
         } catch (e: Exception) {
-            // Guard against SecurityException or TooManyRequestsException
+            Log.w(TAG, "Gagal mendaftarkan network callback", e)
         }
 
         refreshConnectionInfo()
     }
 
+    override fun teardown() {
+        networkCallback?.let { callback ->
+            try {
+                connectivityManager?.unregisterNetworkCallback(callback)
+                networkCallback = null
+            } catch (e: Exception) {
+                Log.w(TAG, "Gagal melepas network callback", e)
+            }
+        }
+    }
+
     override fun refreshConnectionInfo() {
         try {
-            val wifiInfo: WifiInfo? = try {
+            // Prioritaskan WifiInfo modern dari NetworkCapabilities (Android 10+ / 12+)
+            val wifiInfo: WifiInfo? = activeWifiInfoFromCapabilities ?: try {
                 wifiManager?.connectionInfo
             } catch (e: Exception) {
                 null
@@ -69,7 +102,8 @@ class CurrentConnectionRepositoryImpl(
                 return
             }
 
-            val ssid = wifiInfo.ssid?.replace("\"", "")?.takeIf { it != "<unknown ssid>" } ?: "Connected Wi-Fi"
+            val rawSsid = wifiInfo.ssid
+            val ssid = rawSsid?.replace("\"", "")?.takeIf { it != "<unknown ssid>" && it.isNotBlank() } ?: "Connected Wi-Fi"
             val bssid = wifiInfo.bssid ?: ""
             val rssi = wifiInfo.rssi
             val linkSpeed = wifiInfo.linkSpeed.coerceAtLeast(0)
@@ -81,9 +115,9 @@ class CurrentConnectionRepositoryImpl(
             val channel = ChannelFrequencyUtils.toChannel(frequency)
 
             val dhcp = try { wifiManager?.dhcpInfo } catch (e: Exception) { null }
-            val ip = dhcp?.let { formatIpAddress(it.ipAddress) } ?: "192.168.1.100"
-            val gateway = dhcp?.let { formatIpAddress(it.gateway) } ?: "192.168.1.1"
-            val dns1 = dhcp?.let { formatIpAddress(it.dns1) } ?: "8.8.8.8"
+            val ip = dhcp?.let { formatIpAddress(it.ipAddress) } ?: "0.0.0.0"
+            val gateway = dhcp?.let { formatIpAddress(it.gateway) } ?: "0.0.0.0"
+            val dns1 = dhcp?.let { formatIpAddress(it.dns1) } ?: "0.0.0.0"
 
             val ap = WifiAccessPoint(
                 bssid = bssid,
@@ -103,14 +137,20 @@ class CurrentConnectionRepositoryImpl(
                 dns1 = dns1
             )
         } catch (e: Exception) {
+            Log.w(TAG, "Kesalahan saat membaca koneksi wifi aktif", e)
             _connectionInfo.value = ConnectedNetworkInfo()
         }
     }
 
     private fun formatIpAddress(ip: Int): String {
+        if (ip == 0) return "0.0.0.0"
         return (ip and 0xFF).toString() + "." +
                 (ip shr 8 and 0xFF) + "." +
                 (ip shr 16 and 0xFF) + "." +
                 (ip shr 24 and 0xFF)
+    }
+
+    companion object {
+        private const val TAG = "CurrentConnectionRepo"
     }
 }

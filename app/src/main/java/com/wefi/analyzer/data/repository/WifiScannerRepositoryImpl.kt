@@ -7,6 +7,7 @@ import android.content.IntentFilter
 import android.net.wifi.ScanResult
 import android.net.wifi.WifiManager
 import android.os.Build
+import android.util.Log
 import androidx.core.content.ContextCompat
 import com.wefi.analyzer.domain.model.EnvironmentPreset
 import com.wefi.analyzer.domain.model.WifiAccessPoint
@@ -29,7 +30,12 @@ class WifiScannerRepositoryImpl(
     private val calculateWifiQualityScoreUseCase: CalculateWifiQualityScoreUseCase = CalculateWifiQualityScoreUseCase()
 ) : WifiScannerRepository {
 
-    private val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+    private val wifiManager = try {
+        context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+    } catch (e: Exception) {
+        Log.w(TAG, "Gagal mendapatkan WifiManager", e)
+        null
+    }
 
     private val _scanResults = MutableStateFlow<List<WifiAccessPoint>>(emptyList())
     override val scanResults: StateFlow<List<WifiAccessPoint>> = _scanResults.asStateFlow()
@@ -40,19 +46,39 @@ class WifiScannerRepositoryImpl(
     private val _selectedPreset = MutableStateFlow(EnvironmentPreset.INDOOR)
     override val selectedPreset: StateFlow<EnvironmentPreset> = _selectedPreset.asStateFlow()
 
+    private val _isWifiEnabled = MutableStateFlow(checkIsWifiEnabled())
+    override val isWifiEnabled: StateFlow<Boolean> = _isWifiEnabled.asStateFlow()
+
     private val repositoryScope = CoroutineScope(Dispatchers.Default)
+
+    private var isReceiverRegistered = false
+    private var lastScanTriggerTime = 0L
+    private val MIN_SCAN_INTERVAL_MS = 10_000L // 10s debounce against Android foreground scan throttle
 
     private val wifiScanReceiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context?, intent: Intent?) {
-            if (intent?.action == WifiManager.SCAN_RESULTS_AVAILABLE_ACTION) {
-                _isScanning.value = false
-                processScanResults()
+            when (intent?.action) {
+                WifiManager.SCAN_RESULTS_AVAILABLE_ACTION -> {
+                    _isScanning.value = false
+                    _isWifiEnabled.value = checkIsWifiEnabled()
+                    processScanResults()
+                }
+                WifiManager.WIFI_STATE_CHANGED_ACTION -> {
+                    _isWifiEnabled.value = checkIsWifiEnabled()
+                    if (!_isWifiEnabled.value) {
+                        _scanResults.value = emptyList()
+                        _isScanning.value = false
+                    }
+                }
             }
         }
     }
 
     init {
-        val intentFilter = IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION)
+        val intentFilter = IntentFilter().apply {
+            addAction(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION)
+            addAction(WifiManager.WIFI_STATE_CHANGED_ACTION)
+        }
         try {
             ContextCompat.registerReceiver(
                 context,
@@ -60,25 +86,50 @@ class WifiScannerRepositoryImpl(
                 intentFilter,
                 ContextCompat.RECEIVER_EXPORTED
             )
+            isReceiverRegistered = true
         } catch (e: Exception) {
-            // Guard against any OEM receiver registration exception
+            Log.w(TAG, "Gagal mendaftarkan BroadcastReceiver wifi scan", e)
         }
         // Initial fetch from system cache
         processScanResults()
     }
 
+    private fun checkIsWifiEnabled(): Boolean {
+        return try {
+            wifiManager?.isWifiEnabled ?: false
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     override fun startScan() {
+        _isWifiEnabled.value = checkIsWifiEnabled()
+        if (!_isWifiEnabled.value) {
+            _isScanning.value = false
+            return
+        }
+
         if (_isScanning.value) return
+
+        val now = System.currentTimeMillis()
+        if (now - lastScanTriggerTime < MIN_SCAN_INTERVAL_MS) {
+            // Dalam masa cooldown throttling Android OS: segera update dengan cache terbaru tanpa request hardware
+            processScanResults()
+            return
+        }
+
         _isScanning.value = true
+        lastScanTriggerTime = now
 
         val success = try {
             wifiManager?.startScan() ?: false
         } catch (e: Exception) {
+            Log.w(TAG, "wifiManager.startScan() dilempar exception oleh OS", e)
             false
         }
 
         if (!success) {
-            // Throttled by Android OS or failure, process existing cached results
+            // Throttled by Android OS or failure, process existing cached results immediately
             _isScanning.value = false
             processScanResults()
         }
@@ -89,11 +140,23 @@ class WifiScannerRepositoryImpl(
         processScanResults()
     }
 
+    override fun teardown() {
+        if (isReceiverRegistered) {
+            try {
+                context.unregisterReceiver(wifiScanReceiver)
+                isReceiverRegistered = false
+            } catch (e: Exception) {
+                Log.w(TAG, "Gagal melepaskan wifiScanReceiver", e)
+            }
+        }
+    }
+
     private fun processScanResults() {
         repositoryScope.launch {
             val rawResults = try {
                 wifiManager?.scanResults ?: emptyList()
             } catch (e: Exception) {
+                Log.w(TAG, "wifiManager.scanResults dilempar exception", e)
                 emptyList()
             }
 
@@ -159,5 +222,9 @@ class WifiScannerRepositoryImpl(
             security = security,
             qualityScore = score
         )
+    }
+
+    companion object {
+        private const val TAG = "WifiScannerRepo"
     }
 }
