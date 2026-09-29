@@ -122,10 +122,13 @@ fun AroundCheckScreen(
             }
 
             Row {
-                IconButton(onClick = { viewModel.resetAuditStatuses() }) {
+                IconButton(onClick = {
+                    viewModel.refreshScan()
+                    viewModel.resetAuditStatuses()
+                }) {
                     Icon(
                         imageVector = Icons.Rounded.Refresh,
-                        contentDescription = "Reset Status",
+                        contentDescription = "Pindai Ulang & Reset Status",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }

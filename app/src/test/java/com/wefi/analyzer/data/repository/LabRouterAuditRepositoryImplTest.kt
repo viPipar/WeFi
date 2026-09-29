@@ -102,4 +102,11 @@ class LabRouterAuditRepositoryImplTest {
         repository.clearLogs()
         assertEquals(0, repository.auditLogs.value.size)
     }
+
+    @Test
+    fun addAuthorizedSsid_dynamicallyExpandsScope() {
+        assertFalse(repository.isSsidAuthorized("Custom-Lab-Router"))
+        repository.addAuthorizedSsid("Custom-Lab-Router")
+        assertTrue(repository.isSsidAuthorized("Custom-Lab-Router"))
+    }
 }

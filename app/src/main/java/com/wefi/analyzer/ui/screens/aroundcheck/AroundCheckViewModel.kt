@@ -20,7 +20,7 @@ import kotlinx.coroutines.launch
 
 /**
  * ViewModel untuk tab Around Check.
- * Menghubungkan pemindaian hardware AP dengan audit kredensial lab terotorisasi.
+ * Menghubungkan pemindaian hardware AP nyata (ScanResult) dengan audit kredensial lab terotorisasi.
  */
 class AroundCheckViewModel(
     private val scannerRepository: WifiScannerRepository,
@@ -50,7 +50,7 @@ class AroundCheckViewModel(
 
     val auditLogs: StateFlow<List<LabAuditLogEntry>> = auditRepository.auditLogs
 
-    // Lab mock default APs agar selalu ada router lab yang siap diuji dalam simulasi
+    // Lab mock default APs agar selalu ada router lab yang siap diuji saat scanning nirkabel kosong (misal di emulator)
     private val defaultLabTargets = listOf(
         LabAuditTarget("ilmukomputeripb", "00:1A:2B:3C:4D:01", isAuthorized = true, rssi = -52, channel = 6),
         LabAuditTarget("Lab-IoT-01", "00:1A:2B:3C:4D:02", isAuthorized = true, rssi = -60, channel = 1),
@@ -66,34 +66,31 @@ class AroundCheckViewModel(
         _targetStatuses
     ) { scanList, statusMap ->
         val mergedList = mutableListOf<LabAuditTarget>()
-        val seenBssids = mutableSetOf<String>()
 
-        // 1. Tambahkan hasil scan perangkat sekitar
-        for (ap in scanList) {
-            val isAuthorized = auditRepository.isSsidAuthorized(ap.ssid)
-            val baseStatus = if (isAuthorized) LabAuditStatus.UNTESTED else LabAuditStatus.UNAUTHORIZED
-            val currentStatus = statusMap[ap.bssid] ?: baseStatus
+        if (scanList.isNotEmpty()) {
+            // Tampilkan router nirkabel nyata yang tertangkap di sekitar perangkat
+            for (ap in scanList) {
+                val isAuthorized = auditRepository.isSsidAuthorized(ap.ssid)
+                val baseStatus = if (isAuthorized) LabAuditStatus.UNTESTED else LabAuditStatus.UNAUTHORIZED
+                val currentStatus = statusMap[ap.bssid] ?: baseStatus
 
-            mergedList.add(
-                LabAuditTarget(
-                    ssid = ap.ssid,
-                    bssid = ap.bssid,
-                    isAuthorized = isAuthorized,
-                    status = currentStatus,
-                    rssi = ap.rssi,
-                    channel = ap.channel,
-                    frequencyMhz = ap.frequencyMhz
+                mergedList.add(
+                    LabAuditTarget(
+                        ssid = ap.ssid,
+                        bssid = ap.bssid,
+                        isAuthorized = isAuthorized,
+                        status = currentStatus,
+                        rssi = ap.rssi,
+                        channel = ap.channel,
+                        frequencyMhz = ap.frequencyMhz
+                    )
                 )
-            )
-            seenBssids.add(ap.bssid)
-        }
-
-        // 2. Sertakan default lab targets jika belum ada di scan list
-        for (defaultAp in defaultLabTargets) {
-            if (!seenBssids.contains(defaultAp.bssid)) {
+            }
+        } else {
+            // Fallback default mock targets jika pemindaian kosong (misal di emulator)
+            for (defaultAp in defaultLabTargets) {
                 val currentStatus = statusMap[defaultAp.bssid] ?: defaultAp.status
                 mergedList.add(defaultAp.copy(status = currentStatus))
-                seenBssids.add(defaultAp.bssid)
             }
         }
 
@@ -124,6 +121,10 @@ class AroundCheckViewModel(
 
     fun clearAuditLogs() {
         auditRepository.clearLogs()
+    }
+
+    fun refreshScan() {
+        scannerRepository.startScan()
     }
 
     fun startAuditSearch() {
