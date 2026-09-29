@@ -89,5 +89,5 @@
 **Steps:**
 - [x] 4.1 Jalankan `./gradlew testDebugUnitTest` lokal (100% pass).
 - [x] 4.2 Jalankan `./gradlew assembleDebug` lokal.
-- [ ] 4.3 Git commit dan push ke `origin/main`.
-- [ ] 4.4 Verifikasi pipeline GitHub Actions CI/CD sukses dan rilis APK `v1.0.0` terbarui.
+- [x] 4.3 Git commit dan push ke `origin/main`.
+- [x] 4.4 Verifikasi pipeline GitHub Actions CI/CD sukses dan rilis APK `v1.0.0` terbarui.
