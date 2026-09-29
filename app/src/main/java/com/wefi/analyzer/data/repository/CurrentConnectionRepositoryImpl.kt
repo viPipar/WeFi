@@ -97,27 +97,38 @@ class CurrentConnectionRepositoryImpl(
                 null
             }
 
-            if (wifiInfo == null || wifiInfo.bssid == null || wifiInfo.bssid == "02:00:00:00:00:00" || wifiInfo.bssid.isBlank()) {
-                _connectionInfo.value = ConnectedNetworkInfo()
-                return
+            // Periksa apakah perangkat sedang aktif tersambung ke jaringan Wi-Fi
+            val isWifiTransport = try {
+                val activeNet = connectivityManager?.activeNetwork
+                val caps = connectivityManager?.getNetworkCapabilities(activeNet)
+                caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ?: false
+            } catch (e: Exception) {
+                false
             }
-
-            val rawSsid = wifiInfo.ssid
-            val ssid = rawSsid?.replace("\"", "")?.takeIf { it != "<unknown ssid>" && it.isNotBlank() } ?: "Connected Wi-Fi"
-            val bssid = wifiInfo.bssid ?: ""
-            val rssi = wifiInfo.rssi
-            val linkSpeed = wifiInfo.linkSpeed.coerceAtLeast(0)
-            val frequency = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                try { wifiInfo.frequency } catch (e: Exception) { 2412 }
-            } else {
-                2412
-            }
-            val channel = ChannelFrequencyUtils.toChannel(frequency)
 
             val dhcp = try { wifiManager?.dhcpInfo } catch (e: Exception) { null }
             val ip = dhcp?.let { formatIpAddress(it.ipAddress) } ?: "0.0.0.0"
             val gateway = dhcp?.let { formatIpAddress(it.gateway) } ?: "0.0.0.0"
             val dns1 = dhcp?.let { formatIpAddress(it.dns1) } ?: "0.0.0.0"
+
+            val hasValidConnection = isWifiTransport || (ip != "0.0.0.0") || (wifiInfo != null && wifiInfo.networkId != -1)
+
+            if (!hasValidConnection && wifiInfo == null) {
+                _connectionInfo.value = ConnectedNetworkInfo()
+                return
+            }
+
+            val rawSsid = wifiInfo?.ssid
+            val ssid = rawSsid?.replace("\"", "")?.takeIf { it != "<unknown ssid>" && it.isNotBlank() } ?: "Wi-Fi Terhubung"
+            val bssid = wifiInfo?.bssid?.takeIf { it.isNotBlank() } ?: "02:00:00:00:00:00"
+            val rssi = wifiInfo?.rssi ?: -65
+            val linkSpeed = wifiInfo?.linkSpeed?.coerceAtLeast(0) ?: 144
+            val frequency = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                try { wifiInfo?.frequency ?: 2412 } catch (e: Exception) { 2412 }
+            } else {
+                2412
+            }
+            val channel = ChannelFrequencyUtils.toChannel(frequency)
 
             val ap = WifiAccessPoint(
                 bssid = bssid,
