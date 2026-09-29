@@ -41,12 +41,16 @@ import com.wefi.analyzer.ui.screens.speedtest.SpeedTestScreen
 import com.wefi.analyzer.ui.screens.speedtest.SpeedTestViewModel
 import com.wefi.analyzer.ui.theme.WeFiTheme
 
+import com.wefi.analyzer.data.repository.DeviceHardwareRepositoryImpl
+import com.wefi.analyzer.domain.repository.DeviceHardwareRepository
+import com.wefi.analyzer.ui.components.HardwareStateBanner
 import com.wefi.analyzer.ui.screens.diagnostic.DiagnosticRecoveryScreen
 
 class MainActivity : ComponentActivity() {
 
     private var scannerRepository: WifiScannerRepositoryImpl? = null
     private var connectionRepository: CurrentConnectionRepositoryImpl? = null
+    private var hardwareRepository: DeviceHardwareRepositoryImpl? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -55,11 +59,13 @@ class MainActivity : ComponentActivity() {
             // Inisialisasi Data Repositories
             val scannerRepo = WifiScannerRepositoryImpl(applicationContext)
             val connectionRepo = CurrentConnectionRepositoryImpl(applicationContext)
+            val hardwareRepo = DeviceHardwareRepositoryImpl(applicationContext)
             val speedTestRepository = SpeedTestRepositoryImpl()
             val runSpeedTestUseCase = RunSpeedTestUseCase(speedTestRepository)
 
             scannerRepository = scannerRepo
             connectionRepository = connectionRepo
+            hardwareRepository = hardwareRepo
 
             // Inisialisasi ViewModels
             val channelGraphViewModel = ChannelGraphViewModel(scannerRepo, connectionRepo)
@@ -74,6 +80,7 @@ class MainActivity : ComponentActivity() {
                         apListViewModel = apListViewModel,
                         channelRatingViewModel = channelRatingViewModel,
                         speedTestViewModel = speedTestViewModel,
+                        hardwareRepository = hardwareRepo,
                         onTriggerInitialScan = { scannerRepo.startScan() }
                     )
                 }
@@ -91,11 +98,23 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        try {
+            hardwareRepository?.refresh()
+            connectionRepository?.refreshConnectionInfo()
+            scannerRepository?.startScan()
+        } catch (e: Exception) {
+            // Ignore
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         try {
             scannerRepository?.teardown()
             connectionRepository?.teardown()
+            hardwareRepository?.teardown()
         } catch (e: Exception) {
             android.util.Log.w("MainActivity", "Gagal membersihkan repository", e)
         }
@@ -109,6 +128,7 @@ fun MainAppShell(
     apListViewModel: ApListViewModel,
     channelRatingViewModel: ChannelRatingViewModel,
     speedTestViewModel: SpeedTestViewModel,
+    hardwareRepository: DeviceHardwareRepository,
     onTriggerInitialScan: () -> Unit
 ) {
     var currentScreen by remember { mutableStateOf<Screen>(Screen.ChannelGraph) }
@@ -116,11 +136,13 @@ fun MainAppShell(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     val context = LocalContext.current
+    val hardwareState by hardwareRepository.hardwareState.collectAsState()
 
     // Android Runtime Permissions Launcher
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
+        hardwareRepository.refresh()
         val isGranted = permissions.values.any { it }
         if (isGranted) {
             onTriggerInitialScan()
@@ -159,34 +181,55 @@ fun MainAppShell(
             )
         }
     ) { innerPadding ->
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // Screen Content Routing
-            when (activeScreen) {
-                Screen.ChannelGraph -> ChannelGraphScreen(viewModel = channelGraphViewModel)
-                Screen.ApList -> ApListScreen(viewModel = apListViewModel)
-                Screen.ChannelRating -> ChannelRatingScreen(viewModel = channelRatingViewModel)
-                Screen.SpeedTest -> SpeedTestScreen(viewModel = speedTestViewModel)
-            }
-
-            // Juicy Morphing Floating Help Button (Melayang di atas konten)
-            MorphingHelpFab(
-                tabId = activeScreen.tabId,
-                onHelpClick = {
-                    isHelpDrawerOpen = true
-                }
+            HardwareStateBanner(
+                hardwareState = hardwareState,
+                onRequestPermissions = {
+                    val reqList = mutableListOf(
+                        Manifest.permission.ACCESS_FINE_LOCATION,
+                        Manifest.permission.ACCESS_COARSE_LOCATION
+                    )
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        reqList.add(Manifest.permission.NEARBY_WIFI_DEVICES)
+                    }
+                    permissionLauncher.launch(reqList.toTypedArray())
+                },
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
             )
 
-            // Contextual Help & Troubleshooting Drawer
-            if (isHelpDrawerOpen) {
-                ContextualHelpDrawer(
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+            ) {
+                // Screen Content Routing
+                when (activeScreen) {
+                    Screen.ChannelGraph -> ChannelGraphScreen(viewModel = channelGraphViewModel)
+                    Screen.ApList -> ApListScreen(viewModel = apListViewModel)
+                    Screen.ChannelRating -> ChannelRatingScreen(viewModel = channelRatingViewModel)
+                    Screen.SpeedTest -> SpeedTestScreen(viewModel = speedTestViewModel)
+                }
+
+                // Juicy Morphing Floating Help Button (Melayang di atas konten)
+                MorphingHelpFab(
                     tabId = activeScreen.tabId,
-                    onDismiss = { isHelpDrawerOpen = false },
-                    sheetState = sheetState
+                    onHelpClick = {
+                        isHelpDrawerOpen = true
+                    }
                 )
+
+                // Contextual Help & Troubleshooting Drawer
+                if (isHelpDrawerOpen) {
+                    ContextualHelpDrawer(
+                        tabId = activeScreen.tabId,
+                        onDismiss = { isHelpDrawerOpen = false },
+                        sheetState = sheetState
+                    )
+                }
             }
         }
     }
