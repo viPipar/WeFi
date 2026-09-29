@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    
+    <!-- Outer Wi-Fi Wave -->
+    <path
+        android:strokeColor="#77ADF9"
+        android:strokeWidth="5"
+        android:strokeLineCap="round"
+        android:pathData="M30,42 C44,30 64,30 78,42" />
+
+    <!-- Middle Wi-Fi Wave -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="5"
+        android:strokeLineCap="round"
+        android:pathData="M38,52 C48,44 60,44 70,52" />
+
+    <!-- Inner Wi-Fi Wave -->
+    <path
+        android:strokeColor="#77ADF9"
+        android:strokeWidth="5"
+        android:strokeLineCap="round"
+        android:pathData="M46,62 C51,58 57,58 62,62" />
+
+    <!-- Center Base Dot -->
+    <path
+        android:fillColor="#77ADF9"
+        android:pathData="M54,72 A4,4 0 1,1 53.99,72 Z" />
+
+    <!-- Spectrum Parabola Outline overlay -->
+    <path
+        android:strokeColor="#38BDF8"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:pathData="M24,82 Q54,34 84,82" />
+</vector>

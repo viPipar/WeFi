@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.WeFi" parent="@android:style/Theme.Material.Light.NoActionBar">
-        <item name="android:statusBarColor">#F5F8FC</item>
+        <item name="android:statusBarColor">@color/background_light</item>
         <item name="android:navigationBarColor">#FFFFFF</item>
         <item name="android:windowLightStatusBar">true</item>
-        <item name="android:windowBackground">#F5F8FC</item>
+        <item name="android:windowBackground">@color/background_light</item>
+        <item name="android:windowNoTitle">true</item>
     </style>
 </resources>
