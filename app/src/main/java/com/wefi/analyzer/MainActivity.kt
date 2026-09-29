@@ -43,6 +43,9 @@ import com.wefi.analyzer.ui.screens.rating.ChannelRatingScreen
 import com.wefi.analyzer.ui.screens.rating.ChannelRatingViewModel
 import com.wefi.analyzer.ui.screens.speedtest.SpeedTestScreen
 import com.wefi.analyzer.ui.screens.speedtest.SpeedTestViewModel
+import com.wefi.analyzer.ui.screens.aroundcheck.AroundCheckScreen
+import com.wefi.analyzer.ui.screens.aroundcheck.AroundCheckViewModel
+import com.wefi.analyzer.data.repository.LabRouterAuditRepositoryImpl
 import com.wefi.analyzer.ui.theme.WeFiTheme
 
 import com.wefi.analyzer.data.repository.DeviceHardwareRepositoryImpl
@@ -66,6 +69,7 @@ class MainActivity : ComponentActivity() {
             val hardwareRepo = DeviceHardwareRepositoryImpl(applicationContext)
             val speedTestRepository = SpeedTestRepositoryImpl()
             val runSpeedTestUseCase = RunSpeedTestUseCase(speedTestRepository)
+            val auditRepo = LabRouterAuditRepositoryImpl()
 
             scannerRepository = scannerRepo
             connectionRepository = connectionRepo
@@ -76,6 +80,7 @@ class MainActivity : ComponentActivity() {
             val apListViewModel = ApListViewModel(scannerRepo)
             val channelRatingViewModel = ChannelRatingViewModel(scannerRepo)
             val speedTestViewModel = SpeedTestViewModel(runSpeedTestUseCase, connectionRepo)
+            val aroundCheckViewModel = AroundCheckViewModel(scannerRepo, auditRepo)
 
             setContent {
                 WeFiTheme {
@@ -84,6 +89,7 @@ class MainActivity : ComponentActivity() {
                         apListViewModel = apListViewModel,
                         channelRatingViewModel = channelRatingViewModel,
                         speedTestViewModel = speedTestViewModel,
+                        aroundCheckViewModel = aroundCheckViewModel,
                         hardwareRepository = hardwareRepo,
                         onTriggerInitialScan = { scannerRepo.startScan() }
                     )
@@ -132,6 +138,7 @@ fun MainAppShell(
     apListViewModel: ApListViewModel,
     channelRatingViewModel: ChannelRatingViewModel,
     speedTestViewModel: SpeedTestViewModel,
+    aroundCheckViewModel: AroundCheckViewModel,
     hardwareRepository: DeviceHardwareRepository,
     onTriggerInitialScan: () -> Unit
 ) {
@@ -216,6 +223,7 @@ fun MainAppShell(
                     Screen.ApList -> ApListScreen(viewModel = apListViewModel)
                     Screen.ChannelRating -> ChannelRatingScreen(viewModel = channelRatingViewModel)
                     Screen.SpeedTest -> SpeedTestScreen(viewModel = speedTestViewModel)
+                    Screen.AroundCheck -> AroundCheckScreen(viewModel = aroundCheckViewModel)
                 }
 
                 // Juicy Morphing Floating Help Button (Melayang di atas konten)

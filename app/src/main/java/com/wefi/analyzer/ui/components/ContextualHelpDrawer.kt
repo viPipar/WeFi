@@ -72,6 +72,7 @@ fun ContextualHelpDrawer(
                 1 -> ApListHelpContent()
                 2 -> ChannelRatingHelpContent()
                 3 -> SpeedTestHelpContent()
+                4 -> AroundCheckHelpContent()
             }
             Spacer(modifier = Modifier.height(32.dp))
         }
@@ -258,4 +259,30 @@ private fun HelpCard(
             lineHeight = 20.sp
         )
     }
+}
+
+@Composable
+private fun AroundCheckHelpContent() {
+    HelpSectionHeader(
+        title = "Panduan Around Check (Lab Audit)",
+        subtitle = "Verifikasi koneksi kredensial router laboratorium terotorisasi"
+    )
+
+    HelpCard(
+        title = "Batasan Scope Laboratorium",
+        description = "Pengujian hanya diizinkan untuk SSID yang berada dalam whitelist resmi lab. Jaringan publik atau di luar scope otomatis ditandai 'Tidak diizinkan' demi kepatuhan etika & keamanan.",
+        icon = Icons.Rounded.Security
+    )
+
+    HelpCard(
+        title = "Zero Plaintext Leak",
+        description = "Kredensial kandidat di-masking secara aman pada antarmuka dan tidak pernah dicatat dalam log sistem mentah.",
+        icon = Icons.Rounded.Info
+    )
+
+    HelpCard(
+        title = "Arti Indikator Status",
+        description = "Belum diuji (abu-abu), Sedang diuji (biru animasi), Cocok (hijau), Gagal (merah), Tidak diizinkan (slate), Error (kuning).",
+        icon = Icons.Rounded.CheckCircle
+    )
 }
