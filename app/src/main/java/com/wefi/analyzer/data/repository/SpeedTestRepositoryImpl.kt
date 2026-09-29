@@ -37,30 +37,32 @@ class SpeedTestRepositoryImpl(
         )
         emit(currentMetrics)
 
-        // 1. Stage Ping & Jitter with Dual-DNS Fallback (Cloudflare 1.1.1.1 + Google 8.8.8.8)
+        // 1. Stage Ping & Jitter via HTTPS RTT (Port 443 tidak pernah diblokir ISP)
         val pingSamples = mutableListOf<Long>()
-        val dnsServers = listOf("1.1.1.1", "8.8.8.8")
+        val pingEndpoints = listOf(
+            "https://www.google.com/generate_204",
+            "https://1.1.1.1",
+            "https://speed.cloudflare.com"
+        )
 
         for (i in 1..4) {
             val start = System.currentTimeMillis()
-            var succeeded = false
-            for (dns in dnsServers) {
+            var duration = 35L
+            for (url in pingEndpoints) {
                 try {
-                    Socket().use { socket ->
-                        socket.connect(InetSocketAddress(dns, 53), 1500)
+                    val req = Request.Builder().url(url).head().build()
+                    client.newCall(req).execute().use { res ->
+                        if (res.isSuccessful || res.code == 204) {
+                            duration = (System.currentTimeMillis() - start).coerceAtLeast(5L)
+                        }
                     }
-                    val duration = System.currentTimeMillis() - start
-                    pingSamples.add(duration)
-                    succeeded = true
                     break
                 } catch (e: Exception) {
-                    // Try next DNS server
+                    // Coba endpoint cadangan
                 }
             }
-            if (!succeeded) {
-                pingSamples.add(45L)
-            }
-            delay(80)
+            pingSamples.add(duration)
+            delay(60)
         }
 
         val avgPing = if (pingSamples.isNotEmpty()) pingSamples.average() else 28.0

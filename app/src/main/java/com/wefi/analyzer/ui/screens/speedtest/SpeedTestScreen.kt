@@ -265,9 +265,10 @@ fun SpeedTestScreen(
         Spacer(modifier = Modifier.height(20.dp))
 
         // 4. Action Start Button
+        val isNetworkAvailable = connectedAp != null || connectionInfo.ipAddress != "0.0.0.0" || connectionInfo.linkSpeedMbps > 0
         Button(
             onClick = { viewModel.startSpeedTest() },
-            enabled = !metrics.isRunning && connectedAp != null,
+            enabled = !metrics.isRunning && isNetworkAvailable,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(52.dp),
