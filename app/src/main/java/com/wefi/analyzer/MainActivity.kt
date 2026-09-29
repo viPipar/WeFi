@@ -41,33 +41,63 @@ import com.wefi.analyzer.ui.screens.speedtest.SpeedTestScreen
 import com.wefi.analyzer.ui.screens.speedtest.SpeedTestViewModel
 import com.wefi.analyzer.ui.theme.WeFiTheme
 
+import com.wefi.analyzer.ui.screens.diagnostic.DiagnosticRecoveryScreen
+
 class MainActivity : ComponentActivity() {
+
+    private var scannerRepository: WifiScannerRepositoryImpl? = null
+    private var connectionRepository: CurrentConnectionRepositoryImpl? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Inisialisasi Data Repositories
-        val scannerRepository = WifiScannerRepositoryImpl(applicationContext)
-        val connectionRepository = CurrentConnectionRepositoryImpl(applicationContext)
-        val speedTestRepository = SpeedTestRepositoryImpl()
-        val runSpeedTestUseCase = RunSpeedTestUseCase(speedTestRepository)
+        try {
+            // Inisialisasi Data Repositories
+            val scannerRepo = WifiScannerRepositoryImpl(applicationContext)
+            val connectionRepo = CurrentConnectionRepositoryImpl(applicationContext)
+            val speedTestRepository = SpeedTestRepositoryImpl()
+            val runSpeedTestUseCase = RunSpeedTestUseCase(speedTestRepository)
 
-        // Inisialisasi ViewModels
-        val channelGraphViewModel = ChannelGraphViewModel(scannerRepository, connectionRepository)
-        val apListViewModel = ApListViewModel(scannerRepository)
-        val channelRatingViewModel = ChannelRatingViewModel(scannerRepository)
-        val speedTestViewModel = SpeedTestViewModel(runSpeedTestUseCase, connectionRepository)
+            scannerRepository = scannerRepo
+            connectionRepository = connectionRepo
 
-        setContent {
-            WeFiTheme {
-                MainAppShell(
-                    channelGraphViewModel = channelGraphViewModel,
-                    apListViewModel = apListViewModel,
-                    channelRatingViewModel = channelRatingViewModel,
-                    speedTestViewModel = speedTestViewModel,
-                    onTriggerInitialScan = { scannerRepository.startScan() }
-                )
+            // Inisialisasi ViewModels
+            val channelGraphViewModel = ChannelGraphViewModel(scannerRepo, connectionRepo)
+            val apListViewModel = ApListViewModel(scannerRepo)
+            val channelRatingViewModel = ChannelRatingViewModel(scannerRepo)
+            val speedTestViewModel = SpeedTestViewModel(runSpeedTestUseCase, connectionRepo)
+
+            setContent {
+                WeFiTheme {
+                    MainAppShell(
+                        channelGraphViewModel = channelGraphViewModel,
+                        apListViewModel = apListViewModel,
+                        channelRatingViewModel = channelRatingViewModel,
+                        speedTestViewModel = speedTestViewModel,
+                        onTriggerInitialScan = { scannerRepo.startScan() }
+                    )
+                }
             }
+        } catch (t: Throwable) {
+            android.util.Log.e("MainActivity", "Inisialisasi startup gagal, mengalihkan ke mode recovery", t)
+            setContent {
+                WeFiTheme {
+                    DiagnosticRecoveryScreen(
+                        error = t,
+                        onRetry = { recreate() }
+                    )
+                }
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        try {
+            scannerRepository?.teardown()
+            connectionRepository?.teardown()
+        } catch (e: Exception) {
+            android.util.Log.w("MainActivity", "Gagal membersihkan repository", e)
         }
     }
 }

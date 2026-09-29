@@ -14,4 +14,5 @@ interface WifiScannerRepository {
 
     fun startScan()
     fun setEnvironmentPreset(preset: EnvironmentPreset)
+    fun teardown() {}
 }

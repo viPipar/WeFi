@@ -1,43 +1,41 @@
 package com.wefi.analyzer
 
 import android.app.Application
+import android.os.Process
 import android.util.Log
+import com.wefi.analyzer.ui.screens.diagnostic.DiagnosticCrashActivity
+import com.wefi.analyzer.ui.screens.diagnostic.DiagnosticUtils
 import java.io.File
-import java.io.PrintWriter
-import java.io.StringWriter
+import kotlin.system.exitProcess
 
 /**
  * Custom Application class dengan Global Uncaught Exception Handler
  * untuk menangkap crash runtime, mencatat stack trace lengkap ke file lokal,
- * dan mencegah app ditutup mendadak tanpa jejak diagnostik.
+ * dan mengalihkan ke DiagnosticCrashActivity agar Android OS tidak pernah
+ * menampilkan dialog "Aplikasi ditutup karena memiliki bug".
  */
 class WeFiApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
 
-        val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             try {
-                val sw = StringWriter()
-                val pw = PrintWriter(sw)
-                throwable.printStackTrace(pw)
-                val stackTraceString = sw.toString()
-
                 Log.e(TAG, "FATAL CRASH on thread ${thread.name}:", throwable)
 
                 // Simpan crash report ke cache aplikasi
                 val crashFile = File(filesDir, "latest_crash.txt")
-                crashFile.writeText(
-                    "Timestamp: ${System.currentTimeMillis()}\n" +
-                    "Thread: ${thread.name}\n" +
-                    "Exception: ${throwable.javaClass.name}: ${throwable.message}\n" +
-                    "Stacktrace:\n$stackTraceString"
-                )
+                val report = DiagnosticUtils.generateSystemReport(throwable)
+                crashFile.writeText(report)
+
+                // Buka DiagnosticCrashActivity
+                DiagnosticCrashActivity.start(this@WeFiApplication, throwable)
             } catch (e: Exception) {
-                Log.e(TAG, "Gagal menulis crash log", e)
+                Log.e(TAG, "Gagal menangani crash darurat", e)
             } finally {
-                defaultHandler?.uncaughtException(thread, throwable)
+                // Matikan proses lama secara terkontrol tanpa melempar ke OS dialog
+                Process.killProcess(Process.myPid())
+                exitProcess(10)
             }
         }
     }

@@ -17,4 +17,5 @@ data class ConnectedNetworkInfo(
 interface CurrentConnectionRepository {
     val connectionInfo: StateFlow<ConnectedNetworkInfo>
     fun refreshConnectionInfo()
+    fun teardown() {}
 }
