@@ -33,7 +33,7 @@ class AroundCheckViewModelTest {
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
         fakeScannerRepo = FakeWifiScannerRepository()
-        auditRepo = LabRouterAuditRepositoryImpl()
+        auditRepo = LabRouterAuditRepositoryImpl(ioDispatcher = testDispatcher)
         viewModel = AroundCheckViewModel(fakeScannerRepo, auditRepo, testDispatcher)
     }
 

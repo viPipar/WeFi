@@ -4,6 +4,7 @@ import com.wefi.analyzer.domain.model.LabAuditLogEntry
 import com.wefi.analyzer.domain.model.LabAuditStatus
 import com.wefi.analyzer.domain.model.LabAuditTarget
 import com.wefi.analyzer.domain.repository.LabRouterAuditRepository
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -25,7 +26,8 @@ class LabRouterAuditRepositoryImpl(
     private val httpClient: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(5, TimeUnit.SECONDS)
         .readTimeout(5, TimeUnit.SECONDS)
-        .build()
+        .build(),
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) : LabRouterAuditRepository {
 
     override val authorizedSsids: Set<String> = emptySet()
@@ -117,40 +119,41 @@ class LabRouterAuditRepositoryImpl(
     private suspend fun verifyWithLabEndpoint(
         ssid: String,
         candidate: String
-    ): VerifyResult = withContext(Dispatchers.IO) {
-        val endpoint = labApiEndpoint ?: return@withContext VerifyResult.Unavailable
+    ): VerifyResult {
+        val endpoint = labApiEndpoint ?: return VerifyResult.Unavailable
+        return withContext(ioDispatcher) {
+            try {
+                val jsonBody = JSONObject().apply {
+                    put("ssid", ssid)
+                    put("candidate", candidate)
+                }.toString()
 
-        try {
-            val jsonBody = JSONObject().apply {
-                put("ssid", ssid)
-                put("candidate", candidate)
-            }.toString()
+                val request = Request.Builder()
+                    .url(endpoint)
+                    .post(jsonBody.toRequestBody("application/json".toMediaType()))
+                    .build()
 
-            val request = Request.Builder()
-                .url(endpoint)
-                .post(jsonBody.toRequestBody("application/json".toMediaType()))
-                .build()
-
-            httpClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    return@withContext VerifyResult.Error
+                httpClient.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        return@withContext VerifyResult.Error
+                    }
+                    val bodyStr = response.body?.string().orEmpty()
+                    if (bodyStr.isBlank()) {
+                        return@withContext VerifyResult.Error
+                    }
+                    val json = JSONObject(bodyStr)
+                    if (!json.has("valid")) {
+                        return@withContext VerifyResult.Error
+                    }
+                    if (json.getBoolean("valid")) {
+                        VerifyResult.Matched
+                    } else {
+                        VerifyResult.NotMatched
+                    }
                 }
-                val bodyStr = response.body?.string().orEmpty()
-                if (bodyStr.isBlank()) {
-                    return@withContext VerifyResult.Error
-                }
-                val json = JSONObject(bodyStr)
-                if (!json.has("valid")) {
-                    return@withContext VerifyResult.Error
-                }
-                if (json.getBoolean("valid")) {
-                    VerifyResult.Matched
-                } else {
-                    VerifyResult.NotMatched
-                }
+            } catch (e: Exception) {
+                VerifyResult.Unavailable
             }
-        } catch (e: Exception) {
-            VerifyResult.Unavailable
         }
     }
 
