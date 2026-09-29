@@ -388,7 +388,7 @@ git commit -m "feat: add sort option pills to ApListScreen"
 **Files:**
 - Modify: `docs/superpowers/plans/2026-09-29-wefi-functional-repair-plan.md` (Update progress checkmarks)
 
-- [ ] **Step 1: Jalankan git push ke branch main**
-- [ ] **Step 2: Pantau GitHub Actions CI Run hingga seluruh unit test lolos dan APK terbentuk**
-- [ ] **Step 3: Verifikasi berkas APK terbaru di GitHub Releases v1.0.0**
-- [ ] **Step 4: Laporkan kepada pengguna beserta tautan unduhan langsung**
+- [x] **Step 1: Jalankan git push ke branch main**
+- [x] **Step 2: Pantau GitHub Actions CI Run hingga seluruh unit test lolos dan APK terbentuk**
+- [x] **Step 3: Verifikasi berkas APK terbaru di GitHub Releases v1.0.0**
+- [x] **Step 4: Laporkan kepada pengguna beserta tautan unduhan langsung**
