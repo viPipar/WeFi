@@ -20,7 +20,7 @@ Proyek **weFi** dirancang untuk menyediakan instrumen diagnostik spektrum nirkab
 3. Memberikan pembeda visual tegas bagi jaringan Wi-Fi yang sedang terhubung (*Active Connection Plumb-Line*) untuk komparasi kualitas instan.
 4. Menganalisis potensi kecepatan radio (*Theoretical Max PHY Rate*) dan kepadatan interferensi seluruh AP sekitar tanpa memerlukan autentikasi/koneksi.
 5. Menyediakan pengujian performa aktif (*Active Speedtest: Ping, Jitter, Download, Upload*) khusus untuk jaringan yang sedang tersambung.
-6. Mengintegrasikan komponen edukasi interaktif (`?` icon) pada setiap layar untuk mempermudah penjelasan konsep jaringan komputer.
+6. Mengintegrasikan floating help assistant dinamis (`?` icon) dengan animasi morphing juicy (ease-in-ease-out) yang dapat mengecil menjadi edge drawer saat idle dan membesar saat navigasi tab/scroll untuk membuka panduan kontekstual.
 7. Mengadopsi antarmuka visual **Blynk.io Style (Putih - Biru `#77ADF9`)** yang minimalistik, modern, rapi, dan ergonomis bagi mata (*Eye-Comfort*).
 
 ---
@@ -125,7 +125,8 @@ com.wefi.analyzer
 │   │   ├── BlynkSegmentedControl.kt
 │   │   ├── BlynkMetricTile.kt
 │   │   ├── ChannelGraphCanvas.kt
-│   │   └── EducationalBottomSheet.kt
+│   │   ├── MorphingHelpFab.kt
+│   │   └── ContextualHelpDrawer.kt
 │   ├── navigation
 │   │   ├── BottomNavBar.kt
 │   │   └── Screen.kt
@@ -178,12 +179,22 @@ com.wefi.analyzer
    - Mempermudah pengguna melihat posisi tinggi sinyalnya dibanding tetangga.
    - Memperjelas apakah ada kurva router tetangga yang menembus garis frekuensi router sendiri (indikator langsung *co-channel interference*).
 
-### 5.3 Komponen Edukasi Interaktif (`?` Icon)
-Di sudut kanan atas setiap tab terdapat ikon bulat bantuan `(?)`. Saat ditekan, muncul **Modal Bottom Sheet** edukatif:
-- **Tab Grafik:** Penjelasan sumbu dBm, spektrum parabola kuadratik, lebar 20/40 MHz, dan rumus jarak Log-Distance Path Loss.
-- **Tab Daftar AP:** Penjelasan BSSID MAC, perbedaan PHY rate vs throughput internet, enkripsi WPA2/WPA3.
-- **Tab Rating:** Penjelasan mengapa kanal 1, 6, 11 tidak saling tindih di 2.4 GHz, serta bahaya CSMA/CA contention.
-- **Tab Speedtest:** Penjelasan alur paket TCP/UDP, latensi (RTT), dan jitter.
+### 5.3 Juicy Morphing Floating Help Assistant & Contextual Help Drawer
+Fitur bantuan dinamis dengan animasi mikro (*micro-interactions*) yang halus dan responsif:
+
+1. **State 1: Expanded Active FAB (Bulatan Besar + Ikon `?`)**
+   - Diameter 56dp, melayang di kanan bawah layar.
+   - Dipicu otomatis saat berpindah tab atau saat layar di-scroll oleh pengguna.
+   - **Animasi Juicy:** Meluncur keluar dari pinggir bezel layar (*slide-in*), bertransformasi dari bulatan kecil menjadi bulatan besar dengan efek pegas/pantulan lembut (*scale-up overshoot* dengan `FastOutSlowInEasing`).
+2. **State 2: Docked Mini Tab / Edge Drawer (Bulatan Kecil saat Idle)**
+   - Jika pengguna diam (*idle* tanpa scroll atau perpindahan tab selama 3 detik), tombol otomatis mundur (*slide-docking*) ke tepi bezel layar dan mengecil (*scale-down*) menjadi bulatan kecil berdiameter ~24dp.
+   - Desain ini menjaga tampilan tetap bersih (*unobtrusive*), tidak menutupi grafik parabola atau teks data.
+3. **State 3: Tap Interaction & Contextual Help Drawer**
+   - Mengetuk bulatan kecil di tepi layar akan membesarkannya kembali secara instan dan membuka **Contextual Help Drawer / Bottom Sheet**:
+     - **Tab Grafik:** Panduan membaca sumbu frekuensi & dBm, arti lengkung parabola, formula Log-Distance Path Loss untuk estimasi jarak, dan fungsi garis vertikal AP terkoneksi.
+     - **Tab Daftar AP:** Panduan membaca BSSID MAC, arti RSSI, perbedaan kapasitas link radio (PHY Rate) vs internet ISP, serta enkripsi keamanan.
+     - **Tab Rating:** Panduan pemilihan kanal non-overlapping (1, 6, 11) dan rekomendasi menghindari interferensi.
+     - **Tab Speedtest:** Panduan evaluasi throughput internet (Mbps), latensi (ping), dan kestabilan koneksi (jitter).
 
 ---
 
