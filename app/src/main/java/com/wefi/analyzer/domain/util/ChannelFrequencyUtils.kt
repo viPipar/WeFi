@@ -16,6 +16,7 @@ object ChannelFrequencyUtils {
     }
 
     fun toFrequency(channel: Int, is24GHz: Boolean): Int {
+        if (channel <= 0) return 0
         return if (is24GHz) {
             if (channel == 14) 2484 else 2407 + (channel * 5)
         } else {

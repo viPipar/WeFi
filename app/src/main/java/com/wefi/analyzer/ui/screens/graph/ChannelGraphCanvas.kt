@@ -6,7 +6,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
@@ -19,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import com.wefi.analyzer.domain.model.WifiAccessPoint
 import com.wefi.analyzer.domain.util.ChannelFrequencyUtils
 import com.wefi.analyzer.ui.theme.BlynkBlue
+import com.wefi.analyzer.ui.theme.BlynkBlueTint
 import com.wefi.analyzer.ui.theme.SpectrumCurveColors
 
 @Composable
@@ -39,7 +43,7 @@ fun ChannelGraphCanvas(
 
         val paddingLeft = 52.dp.toPx()
         val paddingRight = 24.dp.toPx()
-        val paddingTop = 40.dp.toPx()
+        val paddingTop = 44.dp.toPx()
         val paddingBottom = 48.dp.toPx()
 
         val graphWidth = width - paddingLeft - paddingRight
@@ -111,11 +115,12 @@ fun ChannelGraphCanvas(
         }
 
         filteredAps.forEachIndexed { index, ap ->
+            if (ap.channel <= 0) return@forEachIndexed
+
             val color = SpectrumCurveColors[index % SpectrumCurveColors.size]
             val isConnected = ap.bssid.equals(connectedBssid, ignoreCase = true) || ap.isConnected
 
             val centerX = channelXMap[ap.channel] ?: run {
-                // Approximate position if channel outside basic set
                 val firstCh = channels.firstOrNull() ?: 1
                 val lastCh = channels.lastOrNull() ?: 13
                 val fraction = (ap.channel - firstCh).toFloat() / (lastCh - firstCh).coerceAtLeast(1)
@@ -138,6 +143,9 @@ fun ChannelGraphCanvas(
             val leftX = (centerX - halfWidthPx).coerceAtLeast(paddingLeft)
             val rightX = (centerX + halfWidthPx).coerceAtMost(width - paddingRight)
 
+            // Safety boundary validation against degenerate Bezier curves
+            if (leftX >= rightX || peakY >= baseY) return@forEachIndexed
+
             // Construct smooth quadratic Bezier parabola
             val path = Path().apply {
                 moveTo(leftX, baseY)
@@ -145,10 +153,19 @@ fun ChannelGraphCanvas(
                 close()
             }
 
-            // Draw filled semi-transparent parabola
+            // Glowing vertical gradient fill
+            val gradientBrush = Brush.verticalGradient(
+                colors = listOf(
+                    color.copy(alpha = if (isConnected) 0.50f else 0.35f),
+                    color.copy(alpha = 0.02f)
+                ),
+                startY = peakY,
+                endY = baseY
+            )
+
             drawPath(
                 path = path,
-                color = color.copy(alpha = if (isConnected) 0.35f else 0.18f),
+                brush = gradientBrush,
                 style = Fill
             )
 
@@ -156,19 +173,17 @@ fun ChannelGraphCanvas(
             drawPath(
                 path = path,
                 color = if (isConnected) BlynkBlue else color,
-                style = Stroke(width = if (isConnected) 3.dp.toPx() else 2.dp.toPx())
+                style = Stroke(width = if (isConnected) 3.5.dp.toPx() else 2.dp.toPx())
             )
 
-            // 4. Draw Connected AP Center Plumb-Line (Garis Vertikal Penanda)
+            // 4. Draw Connected AP Center Plumb-Line & Beacon Halo
             if (isConnected) {
                 drawConnectedPlumbLine(
                     centerX = centerX,
                     peakY = peakY,
                     topY = paddingTop,
                     bottomY = baseY,
-                    color = BlynkBlue,
-                    ap = ap,
-                    textPaint = textPaint
+                    color = BlynkBlue
                 )
             }
 
@@ -197,9 +212,7 @@ private fun DrawScope.drawConnectedPlumbLine(
     peakY: Float,
     topY: Float,
     bottomY: Float,
-    color: Color,
-    ap: WifiAccessPoint,
-    textPaint: Paint
+    color: Color
 ) {
     val dashEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 8f), 0f)
 
@@ -212,11 +225,48 @@ private fun DrawScope.drawConnectedPlumbLine(
         pathEffect = dashEffect
     )
 
+    // Glowing Concentric Beacon at the peak
+    drawCircle(
+        color = color.copy(alpha = 0.25f),
+        radius = 12.dp.toPx(),
+        center = Offset(centerX, peakY)
+    )
+    drawCircle(
+        color = color,
+        radius = 5.dp.toPx(),
+        center = Offset(centerX, peakY)
+    )
+    drawCircle(
+        color = Color.White,
+        radius = 2.dp.toPx(),
+        center = Offset(centerX, peakY)
+    )
+
     // Floating Badge Pill at top of the plumb line
+    val badgeWidth = 140.dp.toPx()
+    val badgeHeight = 22.dp.toPx()
+    val badgeLeft = centerX - (badgeWidth / 2f)
+    val badgeTop = topY - badgeHeight - 6.dp.toPx()
+
+    drawRoundRect(
+        color = BlynkBlueTint,
+        topLeft = Offset(badgeLeft, badgeTop),
+        size = Size(badgeWidth, badgeHeight),
+        cornerRadius = CornerRadius(11.dp.toPx(), 11.dp.toPx()),
+        style = Fill
+    )
+    drawRoundRect(
+        color = color.copy(alpha = 0.4f),
+        topLeft = Offset(badgeLeft, badgeTop),
+        size = Size(badgeWidth, badgeHeight),
+        cornerRadius = CornerRadius(11.dp.toPx(), 11.dp.toPx()),
+        style = Stroke(width = 1.dp.toPx())
+    )
+
     drawContext.canvas.nativeCanvas.drawText(
-        "● TERHUBUNG (JARINGAN SAYA)",
+        "● TERHUBUNG",
         centerX,
-        topY - 10.dp.toPx(),
+        badgeTop + (badgeHeight * 0.7f),
         Paint().apply {
             this.color = color.toArgb()
             textSize = 10.dp.toPx()

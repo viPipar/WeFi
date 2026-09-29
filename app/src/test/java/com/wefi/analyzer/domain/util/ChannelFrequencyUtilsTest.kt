@@ -33,4 +33,13 @@ class ChannelFrequencyUtilsTest {
         assertEquals(2437, ChannelFrequencyUtils.toFrequency(6, is24GHz = true))
         assertEquals(5180, ChannelFrequencyUtils.toFrequency(36, is24GHz = false))
     }
+
+    @Test
+    fun `verify invalid and edge-case frequencies return 0`() {
+        assertEquals(0, ChannelFrequencyUtils.toChannel(0))
+        assertEquals(0, ChannelFrequencyUtils.toChannel(-2412))
+        assertEquals(0, ChannelFrequencyUtils.toChannel(99999))
+        assertEquals(0, ChannelFrequencyUtils.toFrequency(0, is24GHz = true))
+        assertEquals(0, ChannelFrequencyUtils.toFrequency(-1, is24GHz = false))
+    }
 }
