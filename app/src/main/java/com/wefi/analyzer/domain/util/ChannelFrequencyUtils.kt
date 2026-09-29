@@ -10,7 +10,7 @@ object ChannelFrequencyUtils {
             frequencyMhz == 2484 -> 14
             frequencyMhz in 2412..2472 -> (frequencyMhz - 2407) / 5
             frequencyMhz in 5170..5825 -> (frequencyMhz - 5000) / 5
-            frequencyMhz in 5945..7105 -> (frequencyMhz - 5940) / 5 + 1
+            frequencyMhz in 5945..7105 -> (frequencyMhz - 5940) / 5
             else -> 0
         }
     }
