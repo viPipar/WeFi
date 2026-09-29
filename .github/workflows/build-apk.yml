@@ -30,11 +30,14 @@ jobs:
     - name: Run Unit Tests
       run: |
         if ! ./gradlew testDebugUnitTest --no-daemon --stacktrace > test_run.log 2>&1; then
-          echo "## ❌ Unit Test / Compilation Error" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          tail -n 80 test_run.log >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          cat test_run.log
+          tail -n 100 test_run.log
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -B ci-failure-log
+          cp test_run.log build_failure_details.txt
+          git add build_failure_details.txt
+          git commit -m "ci: capture build and test failure details"
+          git push origin ci-failure-log --force
           exit 1
         fi
 
