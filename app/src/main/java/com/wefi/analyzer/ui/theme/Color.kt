@@ -4,21 +4,21 @@ import androidx.compose.ui.graphics.Color
 
 // Primary Blynk Azure Blue
 val BlynkBlue = Color(0xFF77ADF9)
-val BlynkBlueDark = Color(0xFF4C8DF5)
-val BlynkBlueTint = Color(0xFFEAF2FE)
+val BlynkBlueDark = Color(0xFF3B82F6)
+val BlynkBlueTint = Color(0xFFEBF3FE)
 
-// Light Background & Surface (Eye Comfort Soft Slate)
-val BlynkBackgroundLight = Color(0xFFF5F8FC)
+// Light Background & Surface (Blynk Pristine White & Soft Canvas)
+val BlynkBackgroundLight = Color(0xFFF8FAFC)
 val BlynkSurfaceLight = Color(0xFFFFFFFF)
 val BlynkBorderLight = Color(0xFFE2E8F0)
 
-// Dark Background & Surface (Eye Comfort Deep Slate)
+// Dark Background & Surface (Fallback)
 val BlynkBackgroundDark = Color(0xFF0F172A)
 val BlynkSurfaceDark = Color(0xFF1E293B)
 val BlynkBorderDark = Color(0xFF334155)
 
 // Typography Colors
-val TextPrimaryLight = Color(0xFF1E293B)
+val TextPrimaryLight = Color(0xFF0F172A)
 val TextSecondaryLight = Color(0xFF64748B)
 val TextPrimaryDark = Color(0xFFF8FAFC)
 val TextSecondaryDark = Color(0xFF94A3B8)

@@ -147,10 +147,12 @@ fun MainAppShell(
         }
     }
 
+    val activeScreen = currentScreen ?: Screen.ChannelGraph
+
     Scaffold(
         bottomBar = {
             BottomNavBar(
-                currentRoute = currentScreen.route,
+                currentRoute = activeScreen.route,
                 onNavigate = { screen ->
                     currentScreen = screen
                 }
@@ -163,7 +165,7 @@ fun MainAppShell(
                 .padding(innerPadding)
         ) {
             // Screen Content Routing
-            when (currentScreen) {
+            when (activeScreen) {
                 Screen.ChannelGraph -> ChannelGraphScreen(viewModel = channelGraphViewModel)
                 Screen.ApList -> ApListScreen(viewModel = apListViewModel)
                 Screen.ChannelRating -> ChannelRatingScreen(viewModel = channelRatingViewModel)
@@ -172,7 +174,7 @@ fun MainAppShell(
 
             // Juicy Morphing Floating Help Button (Melayang di atas konten)
             MorphingHelpFab(
-                tabId = currentScreen.tabId,
+                tabId = activeScreen.tabId,
                 onHelpClick = {
                     isHelpDrawerOpen = true
                 }
@@ -181,7 +183,7 @@ fun MainAppShell(
             // Contextual Help & Troubleshooting Drawer
             if (isHelpDrawerOpen) {
                 ContextualHelpDrawer(
-                    tabId = currentScreen.tabId,
+                    tabId = activeScreen.tabId,
                     onDismiss = { isHelpDrawerOpen = false },
                     sheetState = sheetState
                 )

@@ -99,7 +99,7 @@ fun DiagnosticRecoveryScreen(
                 text = "WeFi Mode Pemulihan",
                 style = MaterialTheme.typography.titleLarge.copy(
                     fontWeight = FontWeight.Bold,
-                    color = TextPrimaryLight
+                    color = MaterialTheme.colorScheme.onBackground
                 )
             )
 
@@ -108,7 +108,7 @@ fun DiagnosticRecoveryScreen(
             Text(
                 text = "Aplikasi mengamankan modul Wi-Fi agar ponsel Anda tetap stabil dan bebas gangguan.",
                 style = MaterialTheme.typography.bodyMedium.copy(
-                    color = TextSecondaryLight
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 ),
                 modifier = Modifier.padding(horizontal = 16.dp),
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -122,7 +122,7 @@ fun DiagnosticRecoveryScreen(
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(16.dp))
                     .background(MaterialTheme.colorScheme.surface)
-                    .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(16.dp))
+                    .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(16.dp))
                     .padding(16.dp)
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
@@ -140,7 +140,7 @@ fun DiagnosticRecoveryScreen(
                             text = "Catatan Sistem",
                             style = MaterialTheme.typography.labelLarge.copy(
                                 fontWeight = FontWeight.SemiBold,
-                                color = TextPrimaryLight
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                         )
                     }
@@ -150,7 +150,7 @@ fun DiagnosticRecoveryScreen(
                     Text(
                         text = DiagnosticUtils.formatExceptionSummary(error),
                         style = MaterialTheme.typography.bodySmall.copy(
-                            color = TextSecondaryLight,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontFamily = FontFamily.Monospace
                         )
                     )

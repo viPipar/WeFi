@@ -13,12 +13,21 @@ sealed class Screen(
     val icon: ImageVector,
     val tabId: Int
 ) {
-    object ChannelGraph : Screen("graph", "Grafik", Icons.Rounded.AutoGraph, 0)
-    object ApList : Screen("ap_list", "Radar AP", Icons.Rounded.FormatListBulleted, 1)
-    object ChannelRating : Screen("rating", "Rating", Icons.Rounded.StarRate, 2)
-    object SpeedTest : Screen("speedtest", "Speedtest", Icons.Rounded.Speed, 3)
+    data object ChannelGraph : Screen("graph", "Grafik", Icons.Rounded.AutoGraph, 0)
+    data object ApList : Screen("ap_list", "Radar AP", Icons.Rounded.FormatListBulleted, 1)
+    data object ChannelRating : Screen("rating", "Rating", Icons.Rounded.StarRate, 2)
+    data object SpeedTest : Screen("speedtest", "Speedtest", Icons.Rounded.Speed, 3)
 
     companion object {
-        val items = listOf(ChannelGraph, ApList, ChannelRating, SpeedTest)
+        val items: List<Screen>
+            get() = listOf(ChannelGraph, ApList, ChannelRating, SpeedTest)
+
+        fun findByRoute(route: String?): Screen = when (route) {
+            ChannelGraph.route -> ChannelGraph
+            ApList.route -> ApList
+            ChannelRating.route -> ChannelRating
+            SpeedTest.route -> SpeedTest
+            else -> ChannelGraph
+        }
     }
 }

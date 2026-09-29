@@ -13,21 +13,21 @@ import androidx.core.view.WindowCompat
 
 private val LightColorScheme = lightColorScheme(
     primary = BlynkBlue,
-    onPrimary = BlynkSurfaceLight,
+    onPrimary = Color.White,
     primaryContainer = BlynkBlueTint,
-    onPrimaryContainer = BlynkBlueDark,
+    onPrimaryContainer = Color(0xFF1E3A8A),
     background = BlynkBackgroundLight,
     onBackground = TextPrimaryLight,
     surface = BlynkSurfaceLight,
     onSurface = TextPrimaryLight,
-    surfaceVariant = BlynkBackgroundLight,
+    surfaceVariant = Color(0xFFF1F5F9),
     onSurfaceVariant = TextSecondaryLight,
     outline = BlynkBorderLight
 )
 
 private val DarkColorScheme = darkColorScheme(
     primary = BlynkBlue,
-    onPrimary = BlynkSurfaceDark,
+    onPrimary = Color.White,
     primaryContainer = BlynkSurfaceDark,
     onPrimaryContainer = BlynkBlue,
     background = BlynkBackgroundDark,
@@ -41,7 +41,7 @@ private val DarkColorScheme = darkColorScheme(
 
 @Composable
 fun WeFiTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    darkTheme: Boolean = false, // Standar baku UI: Putih & Biru (#77ADF9) ala Blynk IoT
     content: @Composable () -> Unit
 ) {
     val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme

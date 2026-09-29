@@ -22,7 +22,7 @@ import com.wefi.analyzer.ui.theme.BlynkBlueTint
 
 @Composable
 fun BottomNavBar(
-    currentRoute: String,
+    currentRoute: String?,
     onNavigate: (Screen) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -38,8 +38,8 @@ fun BottomNavBar(
             containerColor = Color.Transparent,
             tonalElevation = 0.dp
         ) {
-            Screen.items.forEach { screen ->
-                val selected = currentRoute == screen.route
+            Screen.items.filterNotNull().forEach { screen ->
+                val selected = currentRoute != null && currentRoute == screen.route
                 NavigationBarItem(
                     selected = selected,
                     onClick = { onNavigate(screen) },
