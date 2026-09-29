@@ -1,11 +1,14 @@
 package com.wefi.analyzer.ui.screens.aroundcheck
 
+import android.content.Intent
+import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,28 +25,32 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Key
-import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.LocationOff
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.Router
 import androidx.compose.material.icons.rounded.Security
-import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
+import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material.icons.rounded.Wifi
+import androidx.compose.material.icons.rounded.WifiTethering
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -51,7 +58,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -59,8 +66,10 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.wefi.analyzer.domain.model.LabAuditStatus
-import com.wefi.analyzer.domain.model.LabAuditTarget
+import com.wefi.analyzer.domain.model.WifiConnectStatus
+import com.wefi.analyzer.domain.model.WifiScanItem
+import com.wefi.analyzer.domain.model.WifiScanState
+import com.wefi.analyzer.domain.model.WifiSecurityType
 import com.wefi.analyzer.ui.components.BlynkCard
 import com.wefi.analyzer.ui.theme.BlynkBlue
 import com.wefi.analyzer.ui.theme.BlynkBlueDark
@@ -74,22 +83,110 @@ fun AroundCheckScreen(
     viewModel: AroundCheckViewModel,
     modifier: Modifier = Modifier
 ) {
-    val query by viewModel.query.collectAsState()
+    val scanState by viewModel.scanState.collectAsState()
+    val connectState by viewModel.connectState.collectAsState()
+    val selectedItemForDialog by viewModel.selectedItemForPasswordDialog.collectAsState()
+    val passwordInput by viewModel.passwordInput.collectAsState()
     val isPasswordVisible by viewModel.isPasswordVisible.collectAsState()
-    val isConsentGiven by viewModel.isAuthorizedConsentGiven.collectAsState()
-    val isTestingInProgress by viewModel.isTestingInProgress.collectAsState()
-    val activeTestingBssid by viewModel.activeTestingTargetBssid.collectAsState()
-    val targets by viewModel.targets.collectAsState()
-    val auditLogs by viewModel.auditLogs.collectAsState()
-    val showLogSheet by viewModel.showLogBottomSheet.collectAsState()
 
-    val focusManager = LocalFocusManager.current
+    val context = LocalContext.current
 
-    if (showLogSheet) {
-        AuditLogBottomSheet(
-            logs = auditLogs,
-            onDismissRequest = { viewModel.setShowLogBottomSheet(false) },
-            onClearLogs = { viewModel.clearAuditLogs() }
+    // Dialog Input Password
+    if (selectedItemForDialog != null) {
+        val targetItem = selectedItemForDialog!!
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissPasswordDialog() },
+            shape = RoundedCornerShape(20.dp),
+            containerColor = Color.White,
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Rounded.Key,
+                        contentDescription = null,
+                        tint = BlynkBlue,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Sambungkan Wi-Fi",
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            },
+            text = {
+                Column {
+                    Text(
+                        text = "SSID: ${targetItem.ssid}",
+                        fontWeight = FontWeight.SemiBold,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Keamanan: ${targetItem.security.label} • Sinyal: ${targetItem.rssi} dBm",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    OutlinedTextField(
+                        value = passwordInput,
+                        onValueChange = { viewModel.setPasswordInput(it) },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Password Wi-Fi") },
+                        placeholder = { Text("Masukkan passphrase...") },
+                        visualTransformation = if (isPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            IconButton(onClick = { viewModel.togglePasswordVisibility() }) {
+                                Icon(
+                                    imageVector = if (isPasswordVisible) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff,
+                                    contentDescription = "Toggle password"
+                                )
+                            }
+                        },
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Password,
+                            imeAction = ImeAction.Done
+                        ),
+                        keyboardActions = KeyboardActions(onDone = {
+                            viewModel.submitConnect()
+                        }),
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = BlynkBlue,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                        )
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = "Catatan: Dialog persetujuan resmi Android akan ditampilkan oleh sistem.",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontSize = 10.5.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 13.sp
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { viewModel.submitConnect() },
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = BlynkBlue),
+                    enabled = targetItem.security == WifiSecurityType.OPEN || passwordInput.isNotBlank()
+                ) {
+                    Text("Sambungkan", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.dismissPasswordDialog() }) {
+                    Text("Batal", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
         )
     }
 
@@ -115,309 +212,232 @@ fun AroundCheckScreen(
                     color = MaterialTheme.colorScheme.onBackground
                 )
                 Text(
-                    text = "Verifikasi Kredensial Router Lab Terotorisasi",
+                    text = "Pindai & Sambungkan Wi-Fi dengan Persetujuan OS",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
 
-            Row {
-                IconButton(onClick = {
-                    viewModel.refreshScan()
-                    viewModel.resetAuditStatuses()
-                }) {
-                    Icon(
-                        imageVector = Icons.Rounded.Refresh,
-                        contentDescription = "Pindai Ulang & Reset Status",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                IconButton(onClick = { viewModel.setShowLogBottomSheet(true) }) {
-                    Box {
-                        Icon(
-                            imageVector = Icons.Rounded.History,
-                            contentDescription = "Audit Log",
-                            tint = BlynkBlue
-                        )
-                        if (auditLogs.isNotEmpty()) {
-                            Box(
-                                modifier = Modifier
-                                    .size(8.dp)
-                                    .clip(CircleShape)
-                                    .background(QualityGreen)
-                                    .align(Alignment.TopEnd)
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Input Query & Control Card
-        BlynkCard {
-            Text(
-                text = "INPUT QUERY (KREDENSIAL UJI LAB)",
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                letterSpacing = 1.sp
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            OutlinedTextField(
-                value = query,
-                onValueChange = { viewModel.setQuery(it) },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = {
-                    Text(
-                        text = "Masukkan password kandidat lab...",
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                    )
-                },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Rounded.Key,
-                        contentDescription = null,
-                        tint = BlynkBlue
-                    )
-                },
-                trailingIcon = {
-                    IconButton(onClick = { viewModel.togglePasswordVisibility() }) {
-                        Icon(
-                            imageVector = if (isPasswordVisible) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff,
-                            contentDescription = if (isPasswordVisible) "Sembunyikan password" else "Tampilkan password",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                },
-                visualTransformation = if (isPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Password,
-                    imeAction = ImeAction.Done
-                ),
-                keyboardActions = KeyboardActions(onDone = {
-                    focusManager.clearFocus()
-                    if (isConsentGiven && query.isNotBlank() && !isTestingInProgress) {
-                        viewModel.startAuditSearch()
-                    }
-                }),
+            Button(
+                onClick = { viewModel.startScan() },
                 shape = RoundedCornerShape(12.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = BlynkBlue,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline
-                ),
-                singleLine = true,
-                enabled = !isTestingInProgress
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Action Button
-            if (isTestingInProgress) {
-                Button(
-                    onClick = { viewModel.stopAudit() },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = QualityRed)
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Stop,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "HENTIKAN PENGUJIAN",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp
-                    )
-                }
-            } else {
-                Button(
-                    onClick = {
-                        focusManager.clearFocus()
-                        viewModel.startAuditSearch()
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = BlynkBlue,
-                        disabledContainerColor = BlynkBlue.copy(alpha = 0.4f)
-                    ),
-                    enabled = isConsentGiven && query.isNotBlank()
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.PlayArrow,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "UJI SEKARANG",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp,
-                        color = Color.White
-                    )
-                }
+                colors = ButtonDefaults.buttonColors(containerColor = BlynkBlue),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Refresh,
+                    contentDescription = "Scan",
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "SCAN",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp
+                )
             }
         }
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Authorization Consent Card
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp),
-            color = if (isConsentGiven) BlynkBlueTint.copy(alpha = 0.5f) else Color(0xFFFEF3C7).copy(alpha = 0.5f),
-            border = BorderStroke(
-                1.dp,
-                if (isConsentGiven) BlynkBlue.copy(alpha = 0.4f) else QualityAmber.copy(alpha = 0.4f)
-            )
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 10.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
+        // Banner Peringatan Lokasi Nonaktif
+        if (scanState is WifiScanState.Error && (scanState as WifiScanState.Error).isLocationDisabled) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                color = Color(0xFFFEF3C7),
+                border = BorderStroke(1.dp, QualityAmber.copy(alpha = 0.5f))
             ) {
-                Checkbox(
-                    checked = isConsentGiven,
-                    onCheckedChange = { viewModel.setConsentGiven(it) },
-                    colors = CheckboxDefaults.colors(
-                        checkedColor = BlynkBlue,
-                        uncheckedColor = if (isConsentGiven) BlynkBlue else QualityAmber
-                    )
-                )
-
-                Spacer(modifier = Modifier.width(4.dp))
-
-                Column {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Rounded.LocationOff,
+                            contentDescription = null,
+                            tint = QualityAmber,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Layanan Lokasi Nonaktif",
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color(0xFF92400E)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "Konfirmasi Otorisasi Uji Lab",
+                        text = "Sistem Android mewajibkan layanan lokasi aktif untuk memindai jaringan Wi-Fi sekitar.",
                         style = MaterialTheme.typography.bodySmall,
+                        fontSize = 11.5.sp,
+                        color = Color(0xFF78350F)
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Button(
+                        onClick = {
+                            val intent = Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
+                            context.startActivity(intent)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = QualityAmber),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                    ) {
+                        Text("Buka Pengaturan Lokasi", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+        }
+
+        // Indikator Status Pemindaian
+        when (val state = scanState) {
+            is WifiScanState.Scanning -> {
+                BlynkCard {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            color = BlynkBlue,
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = "Sedang memindai jaringan sekitar...",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+            }
+            is WifiScanState.Error -> {
+                if (!state.isLocationDisabled) {
+                    BlynkCard {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Rounded.Warning,
+                                contentDescription = null,
+                                tint = QualityRed,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = state.message,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = QualityRed
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
+            }
+            else -> {}
+        }
+
+        // Daftar Hasil Pemindaian Wi-Fi
+        val scanItems = (scanState as? WifiScanState.Success)?.items ?: emptyList()
+
+        if (scanItems.isEmpty() && scanState !is WifiScanState.Scanning) {
+            BlynkCard {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Wifi,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                        modifier = Modifier.size(48.dp)
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "Belum Ada Jaringan Terdeteksi",
                         fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface
                     )
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Saya menyatakan memiliki izin resmi dari pengelola lab untuk menguji perangkat dalam scope ini.",
+                        text = "Tekan tombol SCAN di atas untuk memindai jaringan sekitar.",
                         style = MaterialTheme.typography.bodySmall,
-                        fontSize = 10.5.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        lineHeight = 13.sp
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Target Summary Header
-        val matchedCount = targets.count { it.status == LabAuditStatus.MATCHED }
-        val authorizedCount = targets.count { it.isAuthorized }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "DAFTAR ROUTER TARGET (${targets.size})",
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                letterSpacing = 1.sp
-            )
-
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = "Scope Lab: $authorizedCount",
-                    style = MaterialTheme.typography.bodySmall,
-                    fontSize = 11.sp,
-                    color = BlynkBlue,
-                    fontWeight = FontWeight.SemiBold
-                )
-                if (matchedCount > 0) {
-                    Text(
-                        text = "Cocok: $matchedCount",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontSize = 11.sp,
-                        color = QualityGreen,
-                        fontWeight = FontWeight.Bold
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(bottom = 24.dp)
+            ) {
+                items(scanItems, key = { it.bssid.ifBlank { it.ssid } }) { item ->
+                    WifiScanItemCard(
+                        item = item,
+                        connectState = connectState,
+                        onConnectClick = { viewModel.openPasswordDialog(item) },
+                        onCancelClick = { viewModel.cancelConnect() },
+                        onForgetClick = { viewModel.forgetNetwork(item.ssid) }
                     )
                 }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(6.dp))
-
-        // Router Targets LazyColumn
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            items(targets, key = { it.bssid }) { target ->
-                LabAuditTargetCard(
-                    target = target,
-                    isActivelyTesting = target.bssid == activeTestingBssid
-                )
-            }
-            item {
-                Spacer(modifier = Modifier.height(24.dp))
             }
         }
     }
 }
 
 @Composable
-private fun LabAuditTargetCard(
-    target: LabAuditTarget,
-    isActivelyTesting: Boolean
+private fun WifiScanItemCard(
+    item: WifiScanItem,
+    connectState: com.wefi.analyzer.domain.model.WifiConnectState,
+    onConnectClick: () -> Unit,
+    onCancelClick: () -> Unit,
+    onForgetClick: () -> Unit
 ) {
-    val borderColor = when {
-        isActivelyTesting -> BlynkBlue
-        target.status == LabAuditStatus.MATCHED -> QualityGreen
-        target.status == LabAuditStatus.FAILED -> QualityRed.copy(alpha = 0.5f)
-        else -> MaterialTheme.colorScheme.outline
-    }
+    val isTarget = connectState.targetSsid == item.ssid
+    val status = if (isTarget) connectState.status else WifiConnectStatus.Idle
+    val isWaitingApproval = status == WifiConnectStatus.WaitingApproval
 
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(if (isActivelyTesting || target.status == LabAuditStatus.MATCHED) 1.5.dp else 1.dp, borderColor),
-        shadowElevation = if (target.status == LabAuditStatus.MATCHED) 2.dp else 0.5.dp
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp)
-        ) {
+    BlynkCard {
+        Column(modifier = Modifier.fillMaxWidth()) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Row(
-                    modifier = Modifier.weight(1f),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
                 ) {
                     Box(
                         modifier = Modifier
                             .size(36.dp)
                             .clip(CircleShape)
                             .background(
-                                if (target.isAuthorized) BlynkBlueTint else MaterialTheme.colorScheme.surfaceVariant
+                                when (status) {
+                                    WifiConnectStatus.Connected -> QualityGreen.copy(alpha = 0.15f)
+                                    WifiConnectStatus.WaitingApproval -> QualityAmber.copy(alpha = 0.15f)
+                                    WifiConnectStatus.Rejected, WifiConnectStatus.Failed -> QualityRed.copy(alpha = 0.15f)
+                                    else -> BlynkBlueTint
+                                }
                             ),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = if (target.isAuthorized) Icons.Rounded.Router else Icons.Rounded.Wifi,
+                            imageVector = when (status) {
+                                WifiConnectStatus.Connected -> Icons.Rounded.CheckCircle
+                                WifiConnectStatus.Rejected, WifiConnectStatus.Failed -> Icons.Rounded.Close
+                                else -> Icons.Rounded.Wifi
+                            },
                             contentDescription = null,
-                            tint = if (target.isAuthorized) BlynkBlue else Color(0xFF64748B),
+                            tint = when (status) {
+                                WifiConnectStatus.Connected -> QualityGreen
+                                WifiConnectStatus.WaitingApproval -> QualityAmber
+                                WifiConnectStatus.Rejected, WifiConnectStatus.Failed -> QualityRed
+                                else -> BlynkBlue
+                            },
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -426,89 +446,163 @@ private fun LabAuditTargetCard(
 
                     Column {
                         Text(
-                            text = target.displaySsid,
-                            style = MaterialTheme.typography.bodyMedium,
+                            text = item.ssid,
                             fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurface
                         )
-                        Text(
-                            text = "${target.bssid} • CH ${target.channel} • ${target.rssi} dBm",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 11.sp
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "${item.rssi} dBm",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Kanal ${item.channel} (${item.frequencyMhz} MHz)",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
 
-                Spacer(modifier = Modifier.width(8.dp))
-
-                // Scope Tag
-                if (target.isAuthorized) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(BlynkBlueTint)
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    ) {
-                        Text(
-                            text = "SCOPE LAB",
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = BlynkBlue
-                        )
+                // Security Type Badge
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = when (item.security) {
+                        WifiSecurityType.WPA3 -> Color(0xFFF3E8FF)
+                        WifiSecurityType.WPA2 -> BlynkBlueTint
+                        WifiSecurityType.OPEN -> Color(0xFFDCFCE7)
+                        else -> Color(0xFFF3F4F6)
                     }
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(Color(0xFFF1F5F9))
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = item.security.label,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = when (item.security) {
+                            WifiSecurityType.WPA3 -> Color(0xFF7E22CE)
+                            WifiSecurityType.WPA2 -> BlynkBlueDark
+                            WifiSecurityType.OPEN -> Color(0xFF15803D)
+                            else -> Color(0xFF4B5563)
+                        },
+                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                    )
+                }
+            }
+
+            // Connection Status Banner jika aktif
+            if (isTarget && status != WifiConnectStatus.Idle) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = when (status) {
+                        WifiConnectStatus.Connected -> Color(0xFFDCFCE7)
+                        WifiConnectStatus.WaitingApproval -> Color(0xFFFEF3C7)
+                        WifiConnectStatus.Rejected, WifiConnectStatus.Failed -> Color(0xFFFEE2E2)
+                        WifiConnectStatus.Timeout -> Color(0xFFFFEDD5)
+                        else -> Color.Transparent
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text(
-                            text = "OUT OF SCOPE",
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF64748B)
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            if (status == WifiConnectStatus.WaitingApproval) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(14.dp),
+                                    strokeWidth = 2.dp,
+                                    color = QualityAmber
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                            }
+                            Text(
+                                text = when (status) {
+                                    WifiConnectStatus.WaitingApproval -> "Menunggu persetujuan user..."
+                                    WifiConnectStatus.Connected -> "Tersambung"
+                                    WifiConnectStatus.Rejected -> "Ditolak oleh user"
+                                    WifiConnectStatus.Failed -> "Gagal tersambung"
+                                    WifiConnectStatus.Timeout -> "Timeout persetujuan"
+                                    else -> ""
+                                },
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 11.5.sp,
+                                color = when (status) {
+                                    WifiConnectStatus.Connected -> Color(0xFF15803D)
+                                    WifiConnectStatus.WaitingApproval -> Color(0xFF92400E)
+                                    WifiConnectStatus.Rejected, WifiConnectStatus.Failed -> Color(0xFFB91C1C)
+                                    WifiConnectStatus.Timeout -> Color(0xFFC2410C)
+                                    else -> Color.Unspecified
+                                }
+                            )
+                        }
+
+                        if (status == WifiConnectStatus.WaitingApproval) {
+                            TextButton(
+                                onClick = onCancelClick,
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                            ) {
+                                Text("Batalkan", color = QualityRed, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
                     }
                 }
             }
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Status Bar Row
+            // Action Buttons
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (isActivelyTesting) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(14.dp),
-                            strokeWidth = 2.dp,
-                            color = BlynkBlue
-                        )
-                        Text(
-                            text = "Menguji respon handshake...",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontSize = 11.sp,
-                            color = BlynkBlue
-                        )
-                    }
-                } else {
-                    Text(
-                        text = if (target.isAuthorized) "Diizinkan untuk pengujian" else "Dibatasi (hanya observasi)",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                IconButton(
+                    onClick = onForgetClick,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.DeleteOutline,
+                        contentDescription = "Lupakan Jaringan",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        modifier = Modifier.size(18.dp)
                     )
                 }
 
-                AuditStatusChip(status = target.status)
+                Spacer(modifier = Modifier.width(8.dp))
+
+                Button(
+                    onClick = onConnectClick,
+                    enabled = !isWaitingApproval,
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = BlynkBlue,
+                        disabledContainerColor = BlynkBlue.copy(alpha = 0.4f)
+                    ),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.WifiTethering,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (status == WifiConnectStatus.Connected) "Tersambung" else "Connect",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    )
+                }
             }
         }
     }

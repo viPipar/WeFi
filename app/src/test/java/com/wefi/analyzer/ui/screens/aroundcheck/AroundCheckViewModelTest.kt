@@ -1,10 +1,12 @@
 package com.wefi.analyzer.ui.screens.aroundcheck
 
-import com.wefi.analyzer.data.repository.LabRouterAuditRepositoryImpl
-import com.wefi.analyzer.domain.model.EnvironmentPreset
-import com.wefi.analyzer.domain.model.LabAuditStatus
-import com.wefi.analyzer.domain.model.WifiAccessPoint
-import com.wefi.analyzer.domain.repository.WifiScannerRepository
+import com.wefi.analyzer.domain.model.WifiConnectState
+import com.wefi.analyzer.domain.model.WifiConnectStatus
+import com.wefi.analyzer.domain.model.WifiScanItem
+import com.wefi.analyzer.domain.model.WifiScanState
+import com.wefi.analyzer.domain.model.WifiSecurityType
+import com.wefi.analyzer.domain.repository.WifiConnector
+import com.wefi.analyzer.domain.repository.WifiScanner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,6 +19,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -25,16 +28,16 @@ import org.junit.Test
 class AroundCheckViewModelTest {
 
     private val testDispatcher = StandardTestDispatcher()
-    private lateinit var fakeScannerRepo: FakeWifiScannerRepository
-    private lateinit var auditRepo: LabRouterAuditRepositoryImpl
+    private lateinit var fakeScanner: FakeWifiScanner
+    private lateinit var fakeConnector: FakeWifiConnector
     private lateinit var viewModel: AroundCheckViewModel
 
     @Before
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
-        fakeScannerRepo = FakeWifiScannerRepository()
-        auditRepo = LabRouterAuditRepositoryImpl(ioDispatcher = testDispatcher)
-        viewModel = AroundCheckViewModel(fakeScannerRepo, auditRepo, testDispatcher)
+        fakeScanner = FakeWifiScanner()
+        fakeConnector = FakeWifiConnector()
+        viewModel = AroundCheckViewModel(fakeScanner, fakeConnector, testDispatcher)
     }
 
     @After
@@ -43,73 +46,103 @@ class AroundCheckViewModelTest {
     }
 
     @Test
-    fun setQuery_updatesQueryState() {
-        viewModel.setQuery("ilmukomputeripb")
-        assertEquals("ilmukomputeripb", viewModel.query.value)
+    fun openPasswordDialog_setsTargetAndResetsPasswordInput() {
+        val item = WifiScanItem("Lab-Wifi", "00:11:22:33:44:55", -60, WifiSecurityType.WPA2, 2412, 1)
+        viewModel.openPasswordDialog(item)
+
+        assertEquals(item, viewModel.selectedItemForPasswordDialog.value)
+        assertEquals("", viewModel.passwordInput.value)
+        assertFalse(viewModel.isPasswordVisible.value)
     }
 
     @Test
-    fun setConsentGiven_togglesConsentState() {
-        assertFalse(viewModel.isAuthorizedConsentGiven.value)
-        viewModel.setConsentGiven(true)
-        assertTrue(viewModel.isAuthorizedConsentGiven.value)
+    fun dismissPasswordDialog_clearsTargetAndInput() {
+        val item = WifiScanItem("Lab-Wifi", "00:11:22:33:44:55", -60, WifiSecurityType.WPA2, 2412, 1)
+        viewModel.openPasswordDialog(item)
+        viewModel.setPasswordInput("secret123")
+        viewModel.dismissPasswordDialog()
+
+        assertNull(viewModel.selectedItemForPasswordDialog.value)
+        assertEquals("", viewModel.passwordInput.value)
     }
 
     @Test
-    fun startAuditSearch_withoutConsent_doesNotStart() = runTest(testDispatcher) {
-        viewModel.setQuery("ilmukomputeripb")
-        viewModel.setConsentGiven(false)
-        viewModel.startAuditSearch()
+    fun submitConnect_invokesConnectorAndClearsDialog() = runTest(testDispatcher) {
+        val item = WifiScanItem("Lab-Wifi", "00:11:22:33:44:55", -60, WifiSecurityType.WPA2, 2412, 1)
+        viewModel.openPasswordDialog(item)
+        viewModel.setPasswordInput("pass12345")
+        viewModel.submitConnect()
         testScheduler.advanceUntilIdle()
 
-        assertFalse(viewModel.isTestingInProgress.value)
+        assertEquals("Lab-Wifi", fakeConnector.lastConnectSsid)
+        assertEquals("pass12345", fakeConnector.lastConnectPassword)
+        assertNull(viewModel.selectedItemForPasswordDialog.value)
+        assertEquals("", viewModel.passwordInput.value)
     }
 
     @Test
-    fun startAuditSearch_withConsent_executesAndMatchesAuthorizedTarget() = runTest(testDispatcher) {
-        viewModel.setQuery("ilmukomputeripb")
-        viewModel.setConsentGiven(true)
+    fun openPasswordDialog_forOpenNetwork_triggersConnectImmediately() = runTest(testDispatcher) {
+        val openItem = WifiScanItem("Free-Lab-Wifi", "00:11:22:33:44:66", -50, WifiSecurityType.OPEN, 2412, 1)
+        viewModel.openPasswordDialog(openItem)
 
-        viewModel.startAuditSearch()
-        testScheduler.advanceUntilIdle()
-
-        assertFalse(viewModel.isTestingInProgress.value)
-        val targets = viewModel.targets.value
-        val labAp = targets.firstOrNull { it.ssid == "ilmukomputeripb" }
-        assertTrue(labAp != null)
-        assertEquals(LabAuditStatus.MATCHED, labAp?.status)
-
-        val publicAp = targets.firstOrNull { it.ssid == "Public-Cafe-WiFi" }
-        assertTrue(publicAp != null)
-        assertEquals(LabAuditStatus.UNAUTHORIZED, publicAp?.status)
+        assertEquals("Free-Lab-Wifi", fakeConnector.lastConnectSsid)
+        assertEquals("", fakeConnector.lastConnectPassword)
+        assertNull(viewModel.selectedItemForPasswordDialog.value)
     }
 
     @Test
-    fun stopAudit_cancelsTesting() = runTest(testDispatcher) {
-        viewModel.setQuery("ilmukomputeripb")
-        viewModel.setConsentGiven(true)
-        viewModel.startAuditSearch()
+    fun cancelConnect_callsConnectorCancel() {
+        viewModel.cancelConnect()
+        assertTrue(fakeConnector.cancelCalled)
+    }
 
-        viewModel.stopAudit()
-        assertFalse(viewModel.isTestingInProgress.value)
+    @Test
+    fun forgetNetwork_callsConnectorForget() {
+        viewModel.forgetNetwork("Lab-Wifi")
+        assertEquals("Lab-Wifi", fakeConnector.lastForgottenSsid)
     }
 }
 
-private class FakeWifiScannerRepository : WifiScannerRepository {
-    private val _scanResults = MutableStateFlow<List<WifiAccessPoint>>(emptyList())
-    override val scanResults: StateFlow<List<WifiAccessPoint>> = _scanResults.asStateFlow()
+private class FakeWifiScanner : WifiScanner {
+    private val _scanState = MutableStateFlow<WifiScanState>(WifiScanState.Idle)
+    override val scanState: StateFlow<WifiScanState> = _scanState.asStateFlow()
+    var startScanCalled = false
 
-    private val _isScanning = MutableStateFlow(false)
-    override val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
-
-    private val _selectedPreset = MutableStateFlow(EnvironmentPreset.INDOOR)
-    override val selectedPreset: StateFlow<EnvironmentPreset> = _selectedPreset.asStateFlow()
-
-    private val _isWifiEnabled = MutableStateFlow(true)
-    override val isWifiEnabled: StateFlow<Boolean> = _isWifiEnabled.asStateFlow()
-
-    override fun startScan() {}
-    override fun setEnvironmentPreset(preset: EnvironmentPreset) {
-        _selectedPreset.value = preset
+    override fun isLocationEnabled(): Boolean = true
+    override fun startScan() {
+        startScanCalled = true
     }
+    override fun teardown() {}
+}
+
+private class FakeWifiConnector : WifiConnector {
+    private val _connectState = MutableStateFlow(WifiConnectState())
+    override val connectState: StateFlow<WifiConnectState> = _connectState.asStateFlow()
+
+    var lastConnectSsid: String? = null
+    var lastConnectPassword: String? = null
+    var cancelCalled = false
+    var lastForgottenSsid: String? = null
+
+    override fun connect(ssid: String, password: String, securityType: WifiSecurityType) {
+        lastConnectSsid = ssid
+        lastConnectPassword = password
+        _connectState.value = WifiConnectState(
+            targetSsid = ssid,
+            status = WifiConnectStatus.WaitingApproval,
+            message = "Menunggu persetujuan user..."
+        )
+    }
+
+    override fun cancel() {
+        cancelCalled = true
+        _connectState.value = WifiConnectState(status = WifiConnectStatus.Idle)
+    }
+
+    override fun forgetNetwork(ssid: String) {
+        lastForgottenSsid = ssid
+        _connectState.value = WifiConnectState(targetSsid = ssid, status = WifiConnectStatus.Idle)
+    }
+
+    override fun teardown() {}
 }
