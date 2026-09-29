@@ -132,15 +132,126 @@ fun ApListScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // 4. Access Point List
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            items(apList, key = { it.bssid }) { ap ->
-                ApItemCard(ap = ap)
+        // 4. Access Point List or Empty State
+        val isWifiEnabled by viewModel.isWifiEnabled.collectAsState()
+        val context = androidx.compose.ui.platform.LocalContext.current
+
+        if (!isWifiEnabled) {
+            BlynkCard(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                padding = 24.dp
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(64.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFFEF3C7)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Wifi,
+                            contentDescription = null,
+                            tint = Color(0xFFD97706),
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Wi-Fi Sedang Nonaktif",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Aktifkan Wi-Fi perangkat Anda untuk mulai memindai daftar access point di sekitar.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(20.dp))
+                    androidx.compose.material3.Button(
+                        onClick = {
+                            try {
+                                context.startActivity(android.content.Intent(android.provider.Settings.ACTION_WIFI_SETTINGS))
+                            } catch (e: Exception) {
+                                viewModel.triggerScan()
+                            }
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = BlynkBlue)
+                    ) {
+                        Text("Aktifkan Wi-Fi", color = Color.White, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+        } else if (apList.isEmpty()) {
+            BlynkCard(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                padding = 24.dp
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(64.dp)
+                            .clip(CircleShape)
+                            .background(BlynkBlueTint),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Search,
+                            contentDescription = null,
+                            tint = BlynkBlue,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Memindai Jaringan...",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Pastikan izin lokasi diberikan dan tekan tombol pindai ulang di kanan atas.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(20.dp))
+                    androidx.compose.material3.Button(
+                        onClick = { viewModel.triggerScan() },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = BlynkBlue)
+                    ) {
+                        Text("Pindai Sekarang", color = Color.White, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                items(apList, key = { it.bssid }) { ap ->
+                    ApItemCard(ap = ap)
+                }
             }
         }
     }

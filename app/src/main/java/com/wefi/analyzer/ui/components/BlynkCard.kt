@@ -31,7 +31,11 @@ fun BlynkCard(
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
-        Column(modifier = Modifier.padding(padding)) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(padding)
+        ) {
             content()
         }
     }

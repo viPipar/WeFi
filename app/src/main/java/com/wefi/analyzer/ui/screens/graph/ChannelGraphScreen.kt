@@ -123,19 +123,80 @@ fun ChannelGraphScreen(
 
         Spacer(modifier = Modifier.height(14.dp))
 
-        // 3. Canvas Parabola Card Container
-        BlynkCard(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
-            padding = 8.dp
-        ) {
-            ChannelGraphCanvas(
-                apList = apList,
-                selectedBandGhz = selectedBand,
-                connectedBssid = connectedBssid,
-                modifier = Modifier.fillMaxSize()
-            )
+        // 3. Canvas Parabola Card Container or Wi-Fi Disabled Warning
+        val isWifiEnabled by viewModel.isWifiEnabled.collectAsState()
+        val context = androidx.compose.ui.platform.LocalContext.current
+
+        if (!isWifiEnabled) {
+            BlynkCard(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                padding = 24.dp
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(64.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFFEF3C7)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Refresh,
+                            contentDescription = null,
+                            tint = Color(0xFFD97706),
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Wi-Fi Ponsel Dinonaktifkan",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Aktifkan koneksi Wi-Fi pada perangkat Anda untuk melihat spektrum frekuensi secara langsung.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(20.dp))
+                    androidx.compose.material3.Button(
+                        onClick = {
+                            try {
+                                context.startActivity(android.content.Intent(android.provider.Settings.ACTION_WIFI_SETTINGS))
+                            } catch (e: Exception) {
+                                viewModel.triggerScan()
+                            }
+                        },
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = BlynkBlue)
+                    ) {
+                        Text("Buka Pengaturan Wi-Fi", color = Color.White, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+        } else {
+            BlynkCard(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                padding = 8.dp
+            ) {
+                ChannelGraphCanvas(
+                    apList = apList,
+                    selectedBandGhz = selectedBand,
+                    connectedBssid = connectedBssid,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(12.dp))
