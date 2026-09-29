@@ -150,6 +150,18 @@ com.wefi.analyzer
 └── MainActivity.kt
 ```
 
+### 4.2 Spesifikasi Build & Dependensi Android
+- **Min SDK:** 26 (Android 8.0 Oreo - mencakup >95% smartphone aktif di pasaran).
+- **Target & Compile SDK:** 34 (Android 14) / 35 (Android 15).
+- **Kotlin & Compose BOM:** Kotlin 2.0+ / Compose BOM `2024.06.00+`.
+- **Core Libraries:**
+  - `androidx.core:core-ktx:1.13.1`
+  - `androidx.lifecycle:lifecycle-viewmodel-compose:2.8.4`
+  - `androidx.navigation:navigation-compose:2.7.7`
+  - `com.squareup.okhttp3:okhttp:4.12.0` (Untuk streaming multi-thread engine Speedtest aktif)
+  - `org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1`
+
+
 ---
 
 ## 5. UI/UX Specification: Blynk.io Aesthetic & Eye Comfort
@@ -195,6 +207,12 @@ Fitur bantuan dinamis dengan animasi mikro (*micro-interactions*) yang halus dan
      - **Tab Daftar AP:** Panduan membaca BSSID MAC, arti RSSI, perbedaan kapasitas link radio (PHY Rate) vs internet ISP, serta enkripsi keamanan.
      - **Tab Rating:** Panduan pemilihan kanal non-overlapping (1, 6, 11) dan rekomendasi menghindari interferensi.
      - **Tab Speedtest:** Panduan evaluasi throughput internet (Mbps), latensi (ping), dan kestabilan koneksi (jitter).
+
+### 5.4 Widget Kontrol Kalibrasi Lingkungan Adaptif (Environment Preset Selector)
+Widget segmented pill compact yang diletakkan di header Tab Daftar AP dan Pengaturan:
+- **Pilihan Preset:** `[ 🌳 Outdoor (n=2.0) ]  [ 🏢 Indoor (n=2.8) ]  [ 🧱 Beton (n=3.5) ]`
+- Mengubah konstanta eksponen redaman $n$ secara instan pada `CalculateDistanceUseCase`.
+- Nilai estimasi jarak `~meter` di seluruh kurva parabola dan kartu daftar AP diperbarui secara real-time dan reaktif via StateFlow.
 
 ---
 
