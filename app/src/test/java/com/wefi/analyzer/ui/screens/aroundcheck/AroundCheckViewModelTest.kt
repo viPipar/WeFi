@@ -11,7 +11,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
-import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -35,7 +34,7 @@ class AroundCheckViewModelTest {
         Dispatchers.setMain(testDispatcher)
         fakeScannerRepo = FakeWifiScannerRepository()
         auditRepo = LabRouterAuditRepositoryImpl()
-        viewModel = AroundCheckViewModel(fakeScannerRepo, auditRepo)
+        viewModel = AroundCheckViewModel(fakeScannerRepo, auditRepo, testDispatcher)
     }
 
     @After
@@ -57,22 +56,22 @@ class AroundCheckViewModelTest {
     }
 
     @Test
-    fun startAuditSearch_withoutConsent_doesNotStart() = runTest {
+    fun startAuditSearch_withoutConsent_doesNotStart() = runTest(testDispatcher) {
         viewModel.setQuery("ilmukomputeripb")
         viewModel.setConsentGiven(false)
         viewModel.startAuditSearch()
-        testDispatcher.scheduler.advanceUntilIdle()
+        testScheduler.advanceUntilIdle()
 
         assertFalse(viewModel.isTestingInProgress.value)
     }
 
     @Test
-    fun startAuditSearch_withConsent_executesAndMatchesAuthorizedTarget() = runTest {
+    fun startAuditSearch_withConsent_executesAndMatchesAuthorizedTarget() = runTest(testDispatcher) {
         viewModel.setQuery("ilmukomputeripb")
         viewModel.setConsentGiven(true)
 
         viewModel.startAuditSearch()
-        testDispatcher.scheduler.advanceUntilIdle()
+        testScheduler.advanceUntilIdle()
 
         assertFalse(viewModel.isTestingInProgress.value)
         val targets = viewModel.targets.value
@@ -86,7 +85,7 @@ class AroundCheckViewModelTest {
     }
 
     @Test
-    fun stopAudit_cancelsTesting() = runTest {
+    fun stopAudit_cancelsTesting() = runTest(testDispatcher) {
         viewModel.setQuery("ilmukomputeripb")
         viewModel.setConsentGiven(true)
         viewModel.startAuditSearch()

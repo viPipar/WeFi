@@ -7,6 +7,8 @@ import com.wefi.analyzer.domain.model.LabAuditStatus
 import com.wefi.analyzer.domain.model.LabAuditTarget
 import com.wefi.analyzer.domain.repository.LabRouterAuditRepository
 import com.wefi.analyzer.domain.repository.WifiScannerRepository
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -22,7 +24,8 @@ import kotlinx.coroutines.launch
  */
 class AroundCheckViewModel(
     private val scannerRepository: WifiScannerRepository,
-    private val auditRepository: LabRouterAuditRepository
+    private val auditRepository: LabRouterAuditRepository,
+    private val dispatcher: CoroutineDispatcher = Dispatchers.Main
 ) : ViewModel() {
 
     private val _query = MutableStateFlow("")
@@ -129,7 +132,7 @@ class AroundCheckViewModel(
         if (_isTestingInProgress.value) return
 
         auditJob?.cancel()
-        auditJob = viewModelScope.launch {
+        auditJob = viewModelScope.launch(dispatcher) {
             _isTestingInProgress.value = true
 
             val currentTargets = targets.value
@@ -143,8 +146,17 @@ class AroundCheckViewModel(
                 _activeTestingTargetBssid.value = target.bssid
                 updateTargetStatus(target.bssid, LabAuditStatus.TESTING)
 
+                var matched = false
                 auditRepository.testRouterCredential(target, _query.value).collect { status ->
                     updateTargetStatus(target.bssid, status)
+                    if (status == LabAuditStatus.MATCHED) {
+                        matched = true
+                    }
+                }
+
+                // Berhenti saat menemukan router lab yang cocok sesuai requirement
+                if (matched) {
+                    break
                 }
             }
 

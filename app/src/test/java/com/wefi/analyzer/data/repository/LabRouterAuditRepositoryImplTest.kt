@@ -7,11 +7,17 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 
 class LabRouterAuditRepositoryImplTest {
 
-    private val repository = LabRouterAuditRepositoryImpl()
+    private lateinit var repository: LabRouterAuditRepositoryImpl
+
+    @Before
+    fun setUp() {
+        repository = LabRouterAuditRepositoryImpl()
+    }
 
     @Test
     fun isSsidAuthorized_validatesWhitelistAndPatterns() {
