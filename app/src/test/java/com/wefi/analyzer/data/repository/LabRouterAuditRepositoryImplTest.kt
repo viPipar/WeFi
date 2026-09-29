@@ -1,5 +1,6 @@
 package com.wefi.analyzer.data.repository
 
+import com.wefi.analyzer.domain.model.LabAuditLogEntry
 import com.wefi.analyzer.domain.model.LabAuditStatus
 import com.wefi.analyzer.domain.model.LabAuditTarget
 import kotlinx.coroutines.flow.toList
@@ -20,33 +21,43 @@ class LabRouterAuditRepositoryImplTest {
     }
 
     @Test
-    fun isSsidAuthorized_validatesWhitelistAndPatterns() {
+    fun isSsidAuthorized_validatesNonBlankSsid() {
         assertTrue(repository.isSsidAuthorized("ilmukomputeripb"))
         assertTrue(repository.isSsidAuthorized("Lab-IoT-01"))
         assertTrue(repository.isSsidAuthorized("RouterLab"))
         assertTrue(repository.isSsidAuthorized("TPLINK406"))
         assertTrue(repository.isSsidAuthorized("Halo"))
-        assertTrue(repository.isSsidAuthorized("Lab-Security-05"))
-        assertTrue(repository.isSsidAuthorized("IPB-AccessPoint"))
+        assertTrue(repository.isSsidAuthorized("CustomRouter"))
 
-        assertFalse(repository.isSsidAuthorized("Public-Free-Wifi"))
-        assertFalse(repository.isSsidAuthorized("Cafe-Net"))
+        assertFalse(repository.isSsidAuthorized(""))
+        assertFalse(repository.isSsidAuthorized("   "))
     }
 
     @Test
-    fun unauthorizedSsid_immediatelyReturnsUnauthorizedStatus() = runTest {
+    fun blankSsid_returnsErrorStatus() = runTest {
         val target = LabAuditTarget(
-            ssid = "Public-Free-Wifi",
+            ssid = "",
             bssid = "11:22:33:44:55:66",
             isAuthorized = false
         )
         val results = repository.testRouterCredential(target, "dummyPass").toList()
-        assertEquals(listOf(LabAuditStatus.UNAUTHORIZED), results)
+        assertEquals(listOf(LabAuditStatus.ERROR), results)
 
         val logs = repository.auditLogs.value
         assertEquals(1, logs.size)
-        assertEquals(LabAuditStatus.UNAUTHORIZED, logs[0].status)
-        assertEquals("Public-Free-Wifi", logs[0].targetSsid)
+        assertEquals(LabAuditStatus.ERROR, logs[0].status)
+        assertEquals("", logs[0].targetSsid)
+    }
+
+    @Test
+    fun emptyCredential_returnsError() = runTest {
+        val target = LabAuditTarget(
+            ssid = "ilmukomputeripb",
+            bssid = "00:AA:BB:CC:DD:EE",
+            isAuthorized = true
+        )
+        val results = repository.testRouterCredential(target, "").toList()
+        assertEquals(listOf(LabAuditStatus.ERROR), results)
     }
 
     @Test
@@ -77,25 +88,14 @@ class LabRouterAuditRepositoryImplTest {
     }
 
     @Test
-    fun emptyCredential_returnsError() = runTest {
-        val target = LabAuditTarget(
-            ssid = "ilmukomputeripb",
-            bssid = "00:AA:BB:CC:DD:EE",
-            isAuthorized = true
-        )
-        val results = repository.testRouterCredential(target, "").toList()
-        assertTrue(results.contains(LabAuditStatus.ERROR))
-    }
-
-    @Test
     fun clearLogs_emptiesLogHistory() {
-        val target = LabAuditTarget(ssid = "Public-Wifi", bssid = "AA:BB:CC:DD:EE:FF", isAuthorized = false)
+        val target = LabAuditTarget(ssid = "RouterLab", bssid = "AA:BB:CC:DD:EE:FF", isAuthorized = true)
         repository.recordLog(
-            com.wefi.analyzer.domain.model.LabAuditLogEntry(
+            LabAuditLogEntry(
                 targetSsid = target.ssid,
                 targetBssid = target.bssid,
-                status = LabAuditStatus.UNAUTHORIZED,
-                notes = "Unauthorized"
+                status = LabAuditStatus.MATCHED,
+                notes = "Matched"
             )
         )
         assertEquals(1, repository.auditLogs.value.size)
@@ -104,9 +104,7 @@ class LabRouterAuditRepositoryImplTest {
     }
 
     @Test
-    fun addAuthorizedSsid_dynamicallyExpandsScope() {
-        assertFalse(repository.isSsidAuthorized("Custom-Lab-Router"))
-        repository.addAuthorizedSsid("Custom-Lab-Router")
-        assertTrue(repository.isSsidAuthorized("Custom-Lab-Router"))
+    fun authorizedSsids_returnsEmptySet() {
+        assertTrue(repository.authorizedSsids.isEmpty())
     }
 }

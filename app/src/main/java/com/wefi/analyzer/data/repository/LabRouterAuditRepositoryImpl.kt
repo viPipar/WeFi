@@ -16,67 +16,37 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
-/**
- * Implementasi repository pengujian dan audit router laboratorium.
- * Mendukung integrasi scan nirkabel dan validasi kredensial (via lab mock API atau constant-time hash matcher).
- */
 class LabRouterAuditRepositoryImpl(
-    initialAuthorizedSsids: Set<String> = DEFAULT_AUTHORIZED_SSIDS,
-    private val httpClient: OkHttpClient = defaultHttpClient
+    private val labApiEndpoint: String? = null,
+    private val httpClient: OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(5, TimeUnit.SECONDS)
+        .readTimeout(5, TimeUnit.SECONDS)
+        .build()
 ) : LabRouterAuditRepository {
 
-    private val _authorizedSsids = initialAuthorizedSsids.toMutableSet()
-    override val authorizedSsids: Set<String>
-        get() = _authorizedSsids
-
-    private val authorizedPrefixRegex = Regex("^(?i)(Lab-|IPB-|RouterLab|TPLINK).*")
+    override val authorizedSsids: Set<String> = emptySet()
 
     private val _auditLogs = MutableStateFlow<List<LabAuditLogEntry>>(emptyList())
     override val auditLogs: StateFlow<List<LabAuditLogEntry>> = _auditLogs.asStateFlow()
 
-    @Volatile
-    private var labApiEndpoint: String? = null
-
-    /**
-     * Daftarkan SSID tambahan ke dalam scope pengujian laboratorium.
-     */
-    fun addAuthorizedSsid(ssid: String) {
-        if (ssid.isNotBlank()) {
-            _authorizedSsids.add(ssid.trim())
-        }
-    }
-
-    /**
-     * Konfigurasi endpoint mock/simulator server lab untuk validasi nyata via HTTP (opsional).
-     * Contoh: "http://localhost:3000/api/verify" atau "http://10.0.2.2:3000/api/verify"
-     */
-    fun setLabApiEndpoint(url: String?) {
-        labApiEndpoint = url?.takeIf { it.isNotBlank() }
-    }
-
-    override fun isSsidAuthorized(ssid: String): Boolean {
-        if (ssid.isBlank()) return false
-        val trimmed = ssid.trim()
-        val inExplicitList = _authorizedSsids.any { it.equals(trimmed, ignoreCase = true) }
-        val matchesPrefix = trimmed.matches(authorizedPrefixRegex)
-        return inExplicitList || matchesPrefix
-    }
+    override fun isSsidAuthorized(ssid: String): Boolean = ssid.isNotBlank()
 
     override fun testRouterCredential(
         target: LabAuditTarget,
         candidateKey: String
     ): Flow<LabAuditStatus> = flow {
-        if (!isSsidAuthorized(target.ssid)) {
-            emit(LabAuditStatus.UNAUTHORIZED)
+        if (target.ssid.isBlank()) {
+            emit(LabAuditStatus.ERROR)
             recordLog(
                 LabAuditLogEntry(
                     targetSsid = target.ssid,
                     targetBssid = target.bssid,
-                    status = LabAuditStatus.UNAUTHORIZED,
-                    notes = "SSID di luar scope lab yang diotorisasi"
+                    status = LabAuditStatus.ERROR,
+                    notes = "SSID kosong"
                 )
             )
             return@flow
@@ -103,7 +73,7 @@ class LabRouterAuditRepositoryImpl(
                     targetSsid = target.ssid,
                     targetBssid = target.bssid,
                     status = LabAuditStatus.ERROR,
-                    notes = "Panjang kredensial melebihi batas ($MAX_CANDIDATE_LENGTH karakter)"
+                    notes = "Panjang kredensial melebihi batas"
                 )
             )
             return@flow
@@ -112,12 +82,24 @@ class LabRouterAuditRepositoryImpl(
         emit(LabAuditStatus.TESTING)
         delay(SIMULATED_LATENCY_MS)
 
-        // Validasi: Coba verifikasi ke endpoint lab jika tersedia, atau fallback ke pencocokan aman internal
-        val isMatch = verifyWithLabEndpoint(target.ssid, target.bssid, candidate)
-            ?: isCredentialMatched(target.ssid, candidate)
+        val endpointResult = verifyWithLabEndpoint(target.ssid, candidate)
 
-        val finalStatus = if (isMatch) LabAuditStatus.MATCHED else LabAuditStatus.FAILED
-        val notes = if (isMatch) "Kredensial cocok (MATCH)" else "Kredensial tidak cocok (MISMATCH)"
+        val finalStatus = when (endpointResult) {
+            VerifyResult.Matched -> LabAuditStatus.MATCHED
+            VerifyResult.NotMatched -> LabAuditStatus.FAILED
+            VerifyResult.Unavailable -> {
+                val local = isCredentialMatched(target.ssid, candidate)
+                if (local) LabAuditStatus.MATCHED else LabAuditStatus.FAILED
+            }
+            VerifyResult.Error -> LabAuditStatus.ERROR
+        }
+
+        val notes = when (finalStatus) {
+            LabAuditStatus.MATCHED -> "Kredensial cocok (MATCH)"
+            LabAuditStatus.FAILED -> "Kredensial tidak cocok (MISMATCH)"
+            LabAuditStatus.ERROR -> "Endpoint lab tidak merespons / error"
+            else -> "Status tak terduga"
+        }
 
         emit(finalStatus)
         recordLog(
@@ -130,20 +112,45 @@ class LabRouterAuditRepositoryImpl(
         )
     }
 
-    private suspend fun verifyWithLabEndpoint(ssid: String, bssid: String, candidate: String): Boolean? {
-        val endpoint = labApiEndpoint ?: return null
-        return withContext(Dispatchers.IO) {
-            try {
-                val jsonBody = """{"ssid":"$ssid","bssid":"$bssid","candidate":"$candidate"}"""
-                val request = Request.Builder()
-                    .url(endpoint)
-                    .post(jsonBody.toRequestBody("application/json".toMediaType()))
-                    .build()
-                val response = httpClient.newCall(request).execute()
-                response.isSuccessful
-            } catch (e: Exception) {
-                null
+    private enum class VerifyResult { Matched, NotMatched, Unavailable, Error }
+
+    private suspend fun verifyWithLabEndpoint(
+        ssid: String,
+        candidate: String
+    ): VerifyResult = withContext(Dispatchers.IO) {
+        val endpoint = labApiEndpoint ?: return@withContext VerifyResult.Unavailable
+
+        try {
+            val jsonBody = JSONObject().apply {
+                put("ssid", ssid)
+                put("candidate", candidate)
+            }.toString()
+
+            val request = Request.Builder()
+                .url(endpoint)
+                .post(jsonBody.toRequestBody("application/json".toMediaType()))
+                .build()
+
+            httpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    return@withContext VerifyResult.Error
+                }
+                val bodyStr = response.body?.string().orEmpty()
+                if (bodyStr.isBlank()) {
+                    return@withContext VerifyResult.Error
+                }
+                val json = JSONObject(bodyStr)
+                if (!json.has("valid")) {
+                    return@withContext VerifyResult.Error
+                }
+                if (json.getBoolean("valid")) {
+                    VerifyResult.Matched
+                } else {
+                    VerifyResult.NotMatched
+                }
             }
+        } catch (e: Exception) {
+            VerifyResult.Unavailable
         }
     }
 
@@ -159,12 +166,6 @@ class LabRouterAuditRepositoryImpl(
             add("${base}_lab")
             add("${base}@lab")
             add("admin$base")
-            add("labkomputer123")
-            add("ipbjuara")
-            add("iotlab2026")
-            add("admin1234")
-            add("halo1234")
-            add("routerlab123")
         }
 
         val candidateHash = sha256(candidate)
@@ -183,27 +184,10 @@ class LabRouterAuditRepositoryImpl(
         _auditLogs.value = emptyList()
     }
 
-    companion object {
-        val DEFAULT_AUTHORIZED_SSIDS = setOf(
-            "ilmukomputeripb",
-            "Lab-IoT-01",
-            "Lab-Jaringan-A",
-            "Lab-Riset-Wifi",
-            "RouterLab",
-            "TPLINK406",
-            "Halo"
-        )
-
-        private const val MAX_LOG_ENTRIES = 100
-        private const val MAX_CANDIDATE_LENGTH = 128
-        private const val SIMULATED_LATENCY_MS = 350L
-
-        private val defaultHttpClient: OkHttpClient by lazy {
-            OkHttpClient.Builder()
-                .connectTimeout(1, TimeUnit.SECONDS)
-                .readTimeout(1, TimeUnit.SECONDS)
-                .build()
-        }
+    private companion object {
+        const val MAX_LOG_ENTRIES = 100
+        const val MAX_CANDIDATE_LENGTH = 128
+        const val SIMULATED_LATENCY_MS = 350L
 
         fun sha256(input: String): String {
             val md = MessageDigest.getInstance("SHA-256")
