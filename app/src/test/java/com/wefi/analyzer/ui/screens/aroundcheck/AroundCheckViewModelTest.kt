@@ -1,12 +1,16 @@
 package com.wefi.analyzer.ui.screens.aroundcheck
 
+import com.wefi.analyzer.domain.model.WifiAuditLogEntry
+import com.wefi.analyzer.domain.model.WifiAuditResult
 import com.wefi.analyzer.domain.model.WifiConnectState
 import com.wefi.analyzer.domain.model.WifiConnectStatus
 import com.wefi.analyzer.domain.model.WifiScanItem
 import com.wefi.analyzer.domain.model.WifiScanState
 import com.wefi.analyzer.domain.model.WifiSecurityType
+import com.wefi.analyzer.domain.repository.WifiAuditLogger
 import com.wefi.analyzer.domain.repository.WifiConnector
 import com.wefi.analyzer.domain.repository.WifiScanner
+import com.wefi.analyzer.domain.util.ConnectCheckResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -30,6 +34,7 @@ class AroundCheckViewModelTest {
     private val testDispatcher = StandardTestDispatcher()
     private lateinit var fakeScanner: FakeWifiScanner
     private lateinit var fakeConnector: FakeWifiConnector
+    private lateinit var fakeAuditLogger: FakeWifiAuditLogger
     private lateinit var viewModel: AroundCheckViewModel
 
     @Before
@@ -37,7 +42,8 @@ class AroundCheckViewModelTest {
         Dispatchers.setMain(testDispatcher)
         fakeScanner = FakeWifiScanner()
         fakeConnector = FakeWifiConnector()
-        viewModel = AroundCheckViewModel(fakeScanner, fakeConnector, testDispatcher)
+        fakeAuditLogger = FakeWifiAuditLogger()
+        viewModel = AroundCheckViewModel(fakeScanner, fakeConnector, fakeAuditLogger, testDispatcher)
     }
 
     @After
@@ -101,17 +107,44 @@ class AroundCheckViewModelTest {
         viewModel.forgetNetwork("Lab-Wifi")
         assertEquals("Lab-Wifi", fakeConnector.lastForgottenSsid)
     }
+
+    @Test
+    fun auditLogs_exposesLoggedEntries() {
+        fakeAuditLogger.record(
+            WifiAuditLogEntry(
+                ssid = "Lab-Wifi-1",
+                result = WifiAuditResult.CONNECTED,
+                reason = "Success"
+            )
+        )
+        assertEquals(1, viewModel.auditLogs.value.size)
+        assertEquals("Lab-Wifi-1", viewModel.auditLogs.value[0].ssid)
+    }
+
+    @Test
+    fun canConnectToSsid_delegatesToConnector() {
+        assertTrue(viewModel.canConnectToSsid("Lab-Wifi"))
+        fakeConnector.allowConnect = false
+        assertFalse(viewModel.canConnectToSsid("Lab-Wifi"))
+    }
 }
 
 private class FakeWifiScanner : WifiScanner {
     private val _scanState = MutableStateFlow<WifiScanState>(WifiScanState.Idle)
     override val scanState: StateFlow<WifiScanState> = _scanState.asStateFlow()
-    var startScanCalled = false
+
+    private val _lastScanTimestamp = MutableStateFlow(0L)
+    override val lastScanTimestamp: StateFlow<Long> = _lastScanTimestamp.asStateFlow()
+
+    private val _remainingScanCooldown = MutableStateFlow(0)
+    override val remainingScanCooldownSeconds: StateFlow<Int> = _remainingScanCooldown.asStateFlow()
+
+    override val isThrottleEnabledOnDevice: Boolean = true
 
     override fun isLocationEnabled(): Boolean = true
-    override fun startScan() {
-        startScanCalled = true
-    }
+    override fun startScan(): Boolean = true
+    override fun refreshFromCache() {}
+    override fun toggleLabScanThrottle(enable: Boolean): Boolean = false
     override fun teardown() {}
 }
 
@@ -123,6 +156,13 @@ private class FakeWifiConnector : WifiConnector {
     var lastConnectPassword: String? = null
     var cancelCalled = false
     var lastForgottenSsid: String? = null
+    var allowConnect = true
+
+    override fun canConnect(ssid: String): ConnectCheckResult {
+        return if (allowConnect) ConnectCheckResult.Allowed else ConnectCheckResult.Blocked("Cooldown", 5)
+    }
+
+    override fun remainingCooldownSeconds(ssid: String): Int = if (allowConnect) 0 else 5
 
     override fun connect(ssid: String, password: String, securityType: WifiSecurityType) {
         lastConnectSsid = ssid
@@ -145,4 +185,17 @@ private class FakeWifiConnector : WifiConnector {
     }
 
     override fun teardown() {}
+}
+
+private class FakeWifiAuditLogger : WifiAuditLogger {
+    private val _auditLogs = MutableStateFlow<List<WifiAuditLogEntry>>(emptyList())
+    override val auditLogs: StateFlow<List<WifiAuditLogEntry>> = _auditLogs.asStateFlow()
+
+    override fun record(entry: WifiAuditLogEntry) {
+        _auditLogs.value = listOf(entry) + _auditLogs.value
+    }
+
+    override fun clear() {
+        _auditLogs.value = emptyList()
+    }
 }

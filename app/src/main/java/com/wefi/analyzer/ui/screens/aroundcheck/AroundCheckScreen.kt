@@ -27,12 +27,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.HourglassBottom
 import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.LocationOff
-import androidx.compose.material.icons.rounded.Lock
-import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.Security
+import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.Warning
@@ -42,18 +42,26 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -66,6 +74,8 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.wefi.analyzer.domain.model.WifiAuditLogEntry
+import com.wefi.analyzer.domain.model.WifiAuditResult
 import com.wefi.analyzer.domain.model.WifiConnectStatus
 import com.wefi.analyzer.domain.model.WifiScanItem
 import com.wefi.analyzer.domain.model.WifiScanState
@@ -77,7 +87,11 @@ import com.wefi.analyzer.ui.theme.BlynkBlueTint
 import com.wefi.analyzer.ui.theme.QualityAmber
 import com.wefi.analyzer.ui.theme.QualityGreen
 import com.wefi.analyzer.ui.theme.QualityRed
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AroundCheckScreen(
     viewModel: AroundCheckViewModel,
@@ -85,13 +99,39 @@ fun AroundCheckScreen(
 ) {
     val scanState by viewModel.scanState.collectAsState()
     val connectState by viewModel.connectState.collectAsState()
+    val lastScanTime by viewModel.lastScanTimestamp.collectAsState()
+    val remainingScanCooldown by viewModel.remainingScanCooldownSeconds.collectAsState()
     val selectedItemForDialog by viewModel.selectedItemForPasswordDialog.collectAsState()
     val passwordInput by viewModel.passwordInput.collectAsState()
     val isPasswordVisible by viewModel.isPasswordVisible.collectAsState()
+    val auditLogs by viewModel.auditLogs.collectAsState()
+    val showAuditSheet by viewModel.showAuditBottomSheet.collectAsState()
+    var currentTickerSeconds by remember { mutableLongStateOf(System.currentTimeMillis() / 1000) }
+    LaunchedEffect(Unit) {
+        while (isActive) {
+            delay(1000L)
+            currentTickerSeconds = System.currentTimeMillis() / 1000
+        }
+    }
 
     val context = LocalContext.current
 
-    // Dialog Input Password
+    // Modal Bottom Sheet untuk Audit Log Riwayat Koneksi Lab
+    if (showAuditSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { viewModel.setShowAuditBottomSheet(false) },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = Color.White
+        ) {
+            AuditLogSheetContent(
+                logs = auditLogs,
+                onClearClick = { viewModel.clearAuditLogs() },
+                onCloseClick = { viewModel.setShowAuditBottomSheet(false) }
+            )
+        }
+    }
+
+    // Dialog Input Password (Masked + Toggle)
     if (selectedItemForDialog != null) {
         val targetItem = selectedItemForDialog!!
         AlertDialog(
@@ -164,7 +204,7 @@ fun AroundCheckScreen(
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Text(
-                        text = "Catatan: Dialog persetujuan resmi Android akan ditampilkan oleh sistem.",
+                        text = "Sistem Android akan menampilkan dialog persetujuan OS. Password tidak disimpan.",
                         style = MaterialTheme.typography.bodySmall,
                         fontSize = 10.5.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -211,30 +251,70 @@ fun AroundCheckScreen(
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onBackground
                 )
+
+                // Timestamp Data dari X detik lalu
+                val relativeTimeText = if (lastScanTime > 0L) {
+                    val diffSec = maxOf(0L, currentTickerSeconds - (lastScanTime / 1000))
+                    "Data dari $diffSec detik lalu"
+                } else {
+                    "Memuat data cache..."
+                }
+
                 Text(
-                    text = "Pindai & Sambungkan Wi-Fi dengan Persetujuan OS",
+                    text = relativeTimeText,
                     style = MaterialTheme.typography.bodySmall,
+                    fontSize = 11.5.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
 
-            Button(
-                onClick = { viewModel.startScan() },
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = BlynkBlue),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Refresh,
-                    contentDescription = "Scan",
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "SCAN",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp
-                )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // Tombol Audit Log
+                IconButton(onClick = { viewModel.setShowAuditBottomSheet(true) }) {
+                    Box {
+                        Icon(
+                            imageVector = Icons.Rounded.History,
+                            contentDescription = "Audit Log",
+                            tint = BlynkBlue
+                        )
+                        if (auditLogs.isNotEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .size(7.dp)
+                                    .clip(CircleShape)
+                                    .background(QualityGreen)
+                                    .align(Alignment.TopEnd)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(4.dp))
+
+                // Tombol SCAN dengan indikator Cooldown Golden Time
+                val isScanCoolingDown = remainingScanCooldown > 0
+                Button(
+                    onClick = { viewModel.startScan() },
+                    enabled = !isScanCoolingDown,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = BlynkBlue,
+                        disabledContainerColor = BlynkBlue.copy(alpha = 0.4f)
+                    ),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Icon(
+                        imageVector = if (isScanCoolingDown) Icons.Rounded.HourglassBottom else Icons.Rounded.Refresh,
+                        contentDescription = "Scan",
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (isScanCoolingDown) "SCAN (${remainingScanCooldown}s)" else "SCAN",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    )
+                }
             }
         }
 
@@ -336,7 +416,7 @@ fun AroundCheckScreen(
             else -> {}
         }
 
-        // Daftar Hasil Pemindaian Wi-Fi
+        // Daftar Hasil Pemindaian Wi-Fi dengan Stable Key
         val scanItems = (scanState as? WifiScanState.Success)?.items ?: emptyList()
 
         if (scanItems.isEmpty() && scanState !is WifiScanState.Scanning) {
@@ -374,10 +454,18 @@ fun AroundCheckScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(bottom = 24.dp)
             ) {
-                items(scanItems, key = { it.bssid.ifBlank { it.ssid } }) { item ->
+                items(
+                    items = scanItems,
+                    key = { it.bssid.ifBlank { it.ssid } }
+                ) { item ->
+                    val cooldownSec = viewModel.getRemainingCooldownForSsid(item.ssid)
+                    val isWaitingApproval = viewModel.isItemWaitingApproval(item.ssid)
+
                     WifiScanItemCard(
                         item = item,
                         connectState = connectState,
+                        cooldownSeconds = cooldownSec,
+                        isWaitingApproval = isWaitingApproval,
                         onConnectClick = { viewModel.openPasswordDialog(item) },
                         onCancelClick = { viewModel.cancelConnect() },
                         onForgetClick = { viewModel.forgetNetwork(item.ssid) }
@@ -392,13 +480,15 @@ fun AroundCheckScreen(
 private fun WifiScanItemCard(
     item: WifiScanItem,
     connectState: com.wefi.analyzer.domain.model.WifiConnectState,
+    cooldownSeconds: Int,
+    isWaitingApproval: Boolean,
     onConnectClick: () -> Unit,
     onCancelClick: () -> Unit,
     onForgetClick: () -> Unit
 ) {
     val isTarget = connectState.targetSsid == item.ssid
     val status = if (isTarget) connectState.status else WifiConnectStatus.Idle
-    val isWaitingApproval = status == WifiConnectStatus.WaitingApproval
+    val isCoolingDown = cooldownSeconds > 0
 
     BlynkCard {
         Column(modifier = Modifier.fillMaxWidth()) {
@@ -495,7 +585,7 @@ private fun WifiScanItemCard(
                 }
             }
 
-            // Connection Status Banner jika aktif
+            // Connection Status Banner
             if (isTarget && status != WifiConnectStatus.Idle) {
                 Spacer(modifier = Modifier.height(10.dp))
                 Surface(
@@ -531,7 +621,7 @@ private fun WifiScanItemCard(
                                     WifiConnectStatus.WaitingApproval -> "Menunggu persetujuan user..."
                                     WifiConnectStatus.Connected -> "Tersambung"
                                     WifiConnectStatus.Rejected -> "Ditolak oleh user"
-                                    WifiConnectStatus.Failed -> "Gagal tersambung"
+                                    WifiConnectStatus.Failed -> connectState.message.ifBlank { "Gagal tersambung" }
                                     WifiConnectStatus.Timeout -> "Timeout persetujuan"
                                     else -> ""
                                 },
@@ -581,29 +671,169 @@ private fun WifiScanItemCard(
 
                 Spacer(modifier = Modifier.width(8.dp))
 
+                // Tombol Connect dengan status Golden Time Cooldown
+                val isButtonEnabled = !isWaitingApproval && !isCoolingDown
                 Button(
                     onClick = onConnectClick,
-                    enabled = !isWaitingApproval,
+                    enabled = isButtonEnabled,
                     shape = RoundedCornerShape(10.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = BlynkBlue,
-                        disabledContainerColor = BlynkBlue.copy(alpha = 0.4f)
+                        disabledContainerColor = BlynkBlue.copy(alpha = 0.35f)
                     ),
                     contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Rounded.WifiTethering,
+                        imageVector = if (isCoolingDown) Icons.Rounded.Timer else Icons.Rounded.WifiTethering,
                         contentDescription = null,
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = if (status == WifiConnectStatus.Connected) "Tersambung" else "Connect",
+                        text = when {
+                            status == WifiConnectStatus.Connected -> "Tersambung"
+                            isCoolingDown -> "Tunggu (${cooldownSeconds}s)"
+                            else -> "Connect"
+                        },
                         fontWeight = FontWeight.Bold,
                         fontSize = 12.sp
                     )
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun AuditLogSheetContent(
+    logs: List<WifiAuditLogEntry>,
+    onClearClick: () -> Unit,
+    onCloseClick: () -> Unit
+) {
+    val dateFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 12.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(
+                    text = "AUDIT LOG KONEKSI",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "Riwayat hasil percobaan tanpa menyimpan password",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Row {
+                if (logs.isNotEmpty()) {
+                    TextButton(onClick = onClearClick) {
+                        Text("Hapus", color = QualityRed, fontSize = 12.sp)
+                    }
+                }
+                IconButton(onClick = onCloseClick) {
+                    Icon(imageVector = Icons.Rounded.Close, contentDescription = "Tutup")
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        if (logs.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 32.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Belum ada riwayat audit koneksi.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(350.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(logs, key = { it.id }) { log ->
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFFF9FAFB),
+                        border = BorderStroke(1.dp, Color(0xFFE5E7EB)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = log.ssid,
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = dateFormat.format(Date(log.timestamp)),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = when (log.result) {
+                                        WifiAuditResult.CONNECTED -> Color(0xFFDCFCE7)
+                                        WifiAuditResult.REJECTED -> Color(0xFFFEE2E2)
+                                        WifiAuditResult.TIMEOUT -> Color(0xFFFFEDD5)
+                                        WifiAuditResult.FAILED -> Color(0xFFFEE2E2)
+                                    }
+                                ) {
+                                    Text(
+                                        text = log.result.label,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = when (log.result) {
+                                            WifiAuditResult.CONNECTED -> Color(0xFF15803D)
+                                            WifiAuditResult.REJECTED, WifiAuditResult.FAILED -> Color(0xFFB91C1C)
+                                            WifiAuditResult.TIMEOUT -> Color(0xFFC2410C)
+                                        },
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                                if (log.reason.isNotBlank()) {
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = log.reason,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(16.dp))
     }
 }

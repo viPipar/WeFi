@@ -2,10 +2,12 @@ package com.wefi.analyzer.data.repository
 
 import com.wefi.analyzer.domain.model.WifiConnectStatus
 import com.wefi.analyzer.domain.model.WifiSecurityType
+import com.wefi.analyzer.domain.util.ConnectCheckResult
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
@@ -28,6 +30,7 @@ class WifiConnectorImplTest {
     @Test
     fun initialState_isIdle() {
         assertEquals(WifiConnectStatus.Idle, connector.connectState.value.status)
+        assertTrue(connector.auditLogger.auditLogs.value.isEmpty())
     }
 
     @Test
@@ -44,8 +47,15 @@ class WifiConnectorImplTest {
     }
 
     @Test
-    fun connect_whenServicesNull_returnsFailedStatus() = runTest(testDispatcher) {
+    fun connect_whenServicesNull_returnsFailedStatusAndLogsAudit() = runTest(testDispatcher) {
         connector.connect("Test-SSID", "password123", WifiSecurityType.WPA2)
         assertEquals(WifiConnectStatus.Failed, connector.connectState.value.status)
+    }
+
+    @Test
+    fun canConnect_delegatesToThrottler() {
+        val check = connector.canConnect("Lab-SSID")
+        assertTrue(check is ConnectCheckResult.Allowed)
+        assertEquals(0, connector.remainingCooldownSeconds("Lab-SSID"))
     }
 }

@@ -10,10 +10,15 @@ import android.net.wifi.WifiNetworkSuggestion
 import android.os.Build
 import android.util.Log
 import androidx.annotation.RequiresApi
+import com.wefi.analyzer.domain.model.WifiAuditLogEntry
+import com.wefi.analyzer.domain.model.WifiAuditResult
 import com.wefi.analyzer.domain.model.WifiConnectState
 import com.wefi.analyzer.domain.model.WifiConnectStatus
 import com.wefi.analyzer.domain.model.WifiSecurityType
+import com.wefi.analyzer.domain.repository.WifiAuditLogger
 import com.wefi.analyzer.domain.repository.WifiConnector
+import com.wefi.analyzer.domain.util.ConnectCheckResult
+import com.wefi.analyzer.domain.util.WifiConnectThrottler
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -28,7 +33,8 @@ import kotlinx.coroutines.launch
 
 /**
  * Implementasi resmi koneksi Wi-Fi menggunakan WifiNetworkSuggestion Android (API 29+).
- * Setiap koneksi manual mewajibkan persetujuan pengguna via dialog sistem OS.
+ * Mengintegrasikan strategi Golden Time, audit logger tanpa password, dan shared NetworkCallback
+ * dengan dual timeout (30s persetujuan, 15s handshake).
  */
 class WifiConnectorImpl(
     private val context: Context? = null,
@@ -42,6 +48,8 @@ class WifiConnectorImpl(
     } catch (e: Exception) {
         null
     },
+    val auditLogger: WifiAuditLogger = WifiAuditLoggerImpl(),
+    val throttler: WifiConnectThrottler = WifiConnectThrottler(),
     private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main
 ) : WifiConnector {
 
@@ -51,8 +59,89 @@ class WifiConnectorImpl(
     override val connectState: StateFlow<WifiConnectState> = _connectState.asStateFlow()
 
     private var activeSuggestion: WifiNetworkSuggestion? = null
-    private var networkCallback: ConnectivityManager.NetworkCallback? = null
-    private var timeoutJob: Job? = null
+    private var activeTargetSsid: String? = null
+
+    private var approvalTimeoutJob: Job? = null
+    private var handshakeTimeoutJob: Job? = null
+    private var isSharedCallbackRegistered = false
+
+    // Satu NetworkCallback bersama untuk seluruh siklus koneksi
+    private val sharedNetworkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            val ssid = activeTargetSsid ?: return
+            approvalTimeoutJob?.cancel()
+
+            // Masuk ke fase verifikasi handshake jaringan (timeout 15 detik)
+            handshakeTimeoutJob?.cancel()
+            handshakeTimeoutJob = repositoryScope.launch {
+                delay(HANDSHAKE_TIMEOUT_MS)
+                if (_connectState.value.status == WifiConnectStatus.WaitingApproval) {
+                    recordFailure(ssid, "Timeout verifikasi handshake (15 detik)", WifiAuditResult.TIMEOUT)
+                }
+            }
+
+            handshakeTimeoutJob?.cancel()
+            throttler.recordAttemptFinished(ssid, success = true)
+
+            _connectState.value = WifiConnectState(
+                targetSsid = ssid,
+                status = WifiConnectStatus.Connected,
+                message = "Tersambung ke $ssid"
+            )
+
+            auditLogger.record(
+                WifiAuditLogEntry(
+                    ssid = ssid,
+                    result = WifiAuditResult.CONNECTED,
+                    reason = "User menyetujui koneksi OS dan jaringan tersedia"
+                )
+            )
+        }
+
+        override fun onUnavailable() {
+            val ssid = activeTargetSsid ?: return
+            recordFailure(
+                ssid = ssid,
+                reason = "Ditolak oleh user atau jaringan tidak tersedia",
+                auditResult = WifiAuditResult.REJECTED
+            )
+        }
+
+        override fun onLost(network: Network) {
+            val ssid = activeTargetSsid ?: return
+            recordFailure(
+                ssid = ssid,
+                reason = "Koneksi terputus dari jaringan",
+                auditResult = WifiAuditResult.FAILED
+            )
+        }
+    }
+
+    init {
+        registerSharedNetworkCallback()
+    }
+
+    private fun registerSharedNetworkCallback() {
+        val cm = connectivityManager ?: return
+        if (isSharedCallbackRegistered) return
+        try {
+            val request = NetworkRequest.Builder()
+                .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+                .build()
+            cm.registerNetworkCallback(request, sharedNetworkCallback)
+            isSharedCallbackRegistered = true
+        } catch (e: Exception) {
+            Log.w(TAG, "Gagal mendaftarkan shared NetworkCallback", e)
+        }
+    }
+
+    override fun canConnect(ssid: String): ConnectCheckResult {
+        return throttler.canConnect(ssid)
+    }
+
+    override fun remainingCooldownSeconds(ssid: String): Int {
+        return throttler.remainingCooldownSecondsForSsid(ssid)
+    }
 
     override fun connect(ssid: String, password: String, securityType: WifiSecurityType) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
@@ -60,6 +149,17 @@ class WifiConnectorImpl(
                 targetSsid = ssid,
                 status = WifiConnectStatus.Failed,
                 message = "Fitur WifiNetworkSuggestion membutuhkan Android 10 (API 29) ke atas."
+            )
+            return
+        }
+
+        // Evaluasi Golden Time Throttler
+        val eligibility = throttler.canConnect(ssid)
+        if (eligibility is ConnectCheckResult.Blocked) {
+            _connectState.value = WifiConnectState(
+                targetSsid = ssid,
+                status = WifiConnectStatus.Failed,
+                message = "${eligibility.reason} (Tunggu ${eligibility.remainingSeconds}s)"
             )
             return
         }
@@ -75,8 +175,15 @@ class WifiConnectorImpl(
             return
         }
 
-        // Batalkan sesi koneksi sebelumnya jika ada
-        cleanupCurrentSession()
+        // Catat awal percobaan ke throttler
+        throttler.recordAttemptStarted(ssid)
+        activeTargetSsid = ssid
+
+        // Batalkan timer sesi sebelumnya jika ada
+        cancelTimers()
+
+        // Hapus saran lama jika ada
+        removeCurrentSuggestion()
 
         try {
             val suggestion = buildNetworkSuggestion(ssid, password, securityType)
@@ -86,10 +193,10 @@ class WifiConnectorImpl(
             // OS akan memvalidasi dan memunculkan dialog persetujuan ke user
             val status = wm.addNetworkSuggestions(listOf(suggestion))
             if (status != WifiManager.STATUS_NETWORK_SUGGESTIONS_SUCCESS) {
-                _connectState.value = WifiConnectState(
-                    targetSsid = ssid,
-                    status = WifiConnectStatus.Failed,
-                    message = "Gagal mendaftarkan saran jaringan ke sistem OS (Kode: $status)"
+                recordFailure(
+                    ssid = ssid,
+                    reason = "Gagal mendaftarkan saran jaringan ke sistem OS (Kode status: $status)",
+                    auditResult = WifiAuditResult.FAILED
                 )
                 return
             }
@@ -100,66 +207,54 @@ class WifiConnectorImpl(
                 message = "Menunggu persetujuan user..."
             )
 
-            // Daftarkan NetworkCallback untuk memantau apakah user menerima / menolak dialog OS
-            val request = NetworkRequest.Builder()
-                .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
-                .build()
+            // Pastikan callback terdaftar
+            registerSharedNetworkCallback()
 
-            val callback = object : ConnectivityManager.NetworkCallback() {
-                override fun onAvailable(network: Network) {
-                    timeoutJob?.cancel()
-                    _connectState.value = WifiConnectState(
-                        targetSsid = ssid,
-                        status = WifiConnectStatus.Connected,
-                        message = "Tersambung ke $ssid"
-                    )
-                }
-
-                override fun onUnavailable() {
-                    timeoutJob?.cancel()
-                    _connectState.value = WifiConnectState(
-                        targetSsid = ssid,
-                        status = WifiConnectStatus.Rejected,
-                        message = "Koneksi ditolak oleh user atau jaringan tidak tersedia"
-                    )
-                }
-
-                override fun onLost(network: Network) {
-                    _connectState.value = WifiConnectState(
-                        targetSsid = ssid,
-                        status = WifiConnectStatus.Failed,
-                        message = "Koneksi terputus dari $ssid"
-                    )
-                }
-            }
-
-            networkCallback = callback
-            try {
-                cm.registerNetworkCallback(request, callback)
-            } catch (e: Exception) {
-                Log.w(TAG, "Gagal mendaftarkan registerNetworkCallback", e)
-            }
-
-            // Timeout 30 detik untuk menunggu dialog approval dari user
-            timeoutJob = repositoryScope.launch {
+            // Timeout persetujuan user (30 detik)
+            approvalTimeoutJob = repositoryScope.launch {
                 delay(APPROVAL_TIMEOUT_MS)
                 if (_connectState.value.status == WifiConnectStatus.WaitingApproval) {
-                    cleanupCurrentSession()
-                    _connectState.value = WifiConnectState(
-                        targetSsid = ssid,
-                        status = WifiConnectStatus.Timeout,
-                        message = "Timeout menunggu persetujuan (30 detik)"
+                    recordFailure(
+                        ssid = ssid,
+                        reason = "Timeout menunggu persetujuan (30 detik)",
+                        auditResult = WifiAuditResult.TIMEOUT
                     )
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Gagal memulai proses koneksi saran jaringan", e)
-            _connectState.value = WifiConnectState(
-                targetSsid = ssid,
-                status = WifiConnectStatus.Failed,
-                message = "Terjadi kesalahan saat memulai koneksi: ${e.message}"
+            recordFailure(
+                ssid = ssid,
+                reason = "Terjadi kesalahan saat memulai koneksi: ${e.message}",
+                auditResult = WifiAuditResult.FAILED
             )
         }
+    }
+
+    private fun recordFailure(ssid: String, reason: String, auditResult: WifiAuditResult) {
+        cancelTimers()
+        removeCurrentSuggestion()
+        throttler.recordAttemptFinished(ssid, success = false)
+
+        val finalStatus = when (auditResult) {
+            WifiAuditResult.REJECTED -> WifiConnectStatus.Rejected
+            WifiAuditResult.TIMEOUT -> WifiConnectStatus.Timeout
+            else -> WifiConnectStatus.Failed
+        }
+
+        _connectState.value = WifiConnectState(
+            targetSsid = ssid,
+            status = finalStatus,
+            message = reason
+        )
+
+        auditLogger.record(
+            WifiAuditLogEntry(
+                ssid = ssid,
+                result = auditResult,
+                reason = reason
+            )
+        )
     }
 
     @RequiresApi(Build.VERSION_CODES.Q)
@@ -195,7 +290,14 @@ class WifiConnectorImpl(
     }
 
     override fun cancel() {
-        cleanupCurrentSession()
+        val ssid = activeTargetSsid
+        if (ssid != null) {
+            throttler.recordAttemptFinished(ssid, success = false)
+        }
+        cancelTimers()
+        removeCurrentSuggestion()
+        activeTargetSsid = null
+
         _connectState.value = WifiConnectState(
             targetSsid = null,
             status = WifiConnectStatus.Idle,
@@ -204,17 +306,12 @@ class WifiConnectorImpl(
     }
 
     override fun forgetNetwork(ssid: String) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val suggestion = activeSuggestion
-            if (suggestion != null) {
-                try {
-                    wifiManager?.removeNetworkSuggestions(listOf(suggestion))
-                } catch (e: Exception) {
-                    Log.w(TAG, "Gagal menghapus network suggestion", e)
-                }
-            }
+        if (activeTargetSsid == ssid) {
+            throttler.recordAttemptFinished(ssid, success = false)
+            cancelTimers()
+            removeCurrentSuggestion()
+            activeTargetSsid = null
         }
-        cleanupCurrentSession()
         _connectState.value = WifiConnectState(
             targetSsid = ssid,
             status = WifiConnectStatus.Idle,
@@ -222,20 +319,7 @@ class WifiConnectorImpl(
         )
     }
 
-    private fun cleanupCurrentSession() {
-        timeoutJob?.cancel()
-        timeoutJob = null
-
-        val cb = networkCallback
-        if (cb != null) {
-            try {
-                connectivityManager?.unregisterNetworkCallback(cb)
-            } catch (e: Exception) {
-                Log.w(TAG, "Gagal unregister network callback", e)
-            }
-            networkCallback = null
-        }
-
+    private fun removeCurrentSuggestion() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val suggestion = activeSuggestion
             if (suggestion != null) {
@@ -249,13 +333,29 @@ class WifiConnectorImpl(
         }
     }
 
+    private fun cancelTimers() {
+        approvalTimeoutJob?.cancel()
+        approvalTimeoutJob = null
+        handshakeTimeoutJob?.cancel()
+        handshakeTimeoutJob = null
+    }
+
     override fun teardown() {
-        cleanupCurrentSession()
+        cancel()
+        if (isSharedCallbackRegistered) {
+            try {
+                connectivityManager?.unregisterNetworkCallback(sharedNetworkCallback)
+                isSharedCallbackRegistered = false
+            } catch (e: Exception) {
+                Log.w(TAG, "Gagal melepaskan shared NetworkCallback", e)
+            }
+        }
         repositoryScope.cancel()
     }
 
     companion object {
         private const val TAG = "WifiConnectorImpl"
-        const val APPROVAL_TIMEOUT_MS = 30_000L
+        const val APPROVAL_TIMEOUT_MS = 30_000L // 30 detik timeout persetujuan user
+        const val HANDSHAKE_TIMEOUT_MS = 15_000L // 15 detik timeout handshake
     }
 }
