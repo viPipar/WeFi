@@ -2,6 +2,7 @@ package com.wefi.analyzer.data.repository
 
 import android.content.Context
 import android.net.ConnectivityManager
+import android.net.MacAddress
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
@@ -9,6 +10,7 @@ import android.net.wifi.WifiManager
 import android.net.wifi.WifiNetworkSpecifier
 import android.os.Build
 import android.util.Log
+import java.util.UUID
 import com.wefi.analyzer.domain.model.WifiAuditLogEntry
 import com.wefi.analyzer.domain.model.WifiAuditResult
 import com.wefi.analyzer.domain.model.WifiConnectState
@@ -60,6 +62,7 @@ class WifiConnectorImpl(
     override val connectState: StateFlow<WifiConnectState> = _connectState.asStateFlow()
 
     private var activeTargetSsid: String? = null
+    private var activeAttemptId: String? = null
     private var activeNetworkRequestCallback: ConnectivityManager.NetworkCallback? = null
 
     private var approvalTimeoutJob: Job? = null
@@ -92,7 +95,22 @@ class WifiConnectorImpl(
         return throttler.remainingCooldownSecondsForSsid(ssid)
     }
 
-    override fun connect(ssid: String, password: String, securityType: WifiSecurityType) {
+    override fun isCurrentlyConnectedTo(ssid: String, bssid: String): Boolean {
+        return try {
+            val info = wifiManager?.connectionInfo ?: return false
+            val currentSsid = info.ssid?.replace("\"", "") ?: ""
+            val currentBssid = info.bssid ?: ""
+            if (bssid.isNotBlank() && currentBssid.isNotBlank()) {
+                currentBssid.equals(bssid, ignoreCase = true)
+            } else {
+                currentSsid.equals(ssid, ignoreCase = true)
+            }
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    override fun connect(ssid: String, password: String, securityType: WifiSecurityType, bssid: String) {
         if (sdkInt < Build.VERSION_CODES.Q) {
             _connectState.value = WifiConnectState(
                 targetSsid = ssid,
@@ -145,6 +163,8 @@ class WifiConnectorImpl(
         // Catat awal percobaan ke throttler
         throttler.recordAttemptStarted(ssid)
         activeTargetSsid = ssid
+        val currentAttemptId = UUID.randomUUID().toString()
+        activeAttemptId = currentAttemptId
 
         // Batalkan timer dan callback sesi sebelumnya jika ada
         cancelTimers()
@@ -154,6 +174,14 @@ class WifiConnectorImpl(
         try {
             val specBuilder = WifiNetworkSpecifier.Builder()
                 .setSsid(ssid)
+
+            if (bssid.isNotBlank() && bssid.matches(Regex("^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$"))) {
+                try {
+                    specBuilder.setBssid(MacAddress.fromString(bssid))
+                } catch (e: Exception) {
+                    Log.w(TAG, "Gagal mengikat BSSID ke specifier: $bssid", e)
+                }
+            }
 
             when (securityType) {
                 WifiSecurityType.WPA3 -> {
@@ -177,7 +205,7 @@ class WifiConnectorImpl(
 
             val interactiveCallback = object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) {
-                    if (activeTargetSsid != ssid) return
+                    if (activeAttemptId != currentAttemptId || activeTargetSsid != ssid) return
                     cancelTimers()
                     throttler.recordAttemptFinished(ssid, success = true)
 
@@ -203,7 +231,7 @@ class WifiConnectorImpl(
                 }
 
                 override fun onUnavailable() {
-                    if (activeTargetSsid != ssid) return
+                    if (activeAttemptId != currentAttemptId || activeTargetSsid != ssid) return
                     unbindProcessNetwork()
                     recordFailure(
                         ssid = ssid,
@@ -213,7 +241,7 @@ class WifiConnectorImpl(
                 }
 
                 override fun onLost(network: Network) {
-                    if (activeTargetSsid != ssid) return
+                    if (activeAttemptId != currentAttemptId || activeTargetSsid != ssid) return
                     unbindProcessNetwork()
                     recordFailure(
                         ssid = ssid,
@@ -295,6 +323,7 @@ class WifiConnectorImpl(
         unregisterActiveRequestCallback()
         unbindProcessNetwork()
         activeTargetSsid = null
+        activeAttemptId = null
 
         _connectState.value = WifiConnectState(
             targetSsid = null,
@@ -310,6 +339,7 @@ class WifiConnectorImpl(
             unregisterActiveRequestCallback()
             unbindProcessNetwork()
             activeTargetSsid = null
+            activeAttemptId = null
         }
         unbindProcessNetwork()
         _connectState.value = WifiConnectState(

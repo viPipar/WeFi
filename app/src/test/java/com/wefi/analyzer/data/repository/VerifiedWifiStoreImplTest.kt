@@ -80,6 +80,17 @@ class VerifiedWifiStoreImplTest {
 
         assertTrue(resilientStore.verifiedRouters.value.isEmpty())
     }
+
+    @Test
+    fun differentBssid_sameSsid_isNotConsideredVerified() {
+        val router1 = VerifiedLabRouter("00:11:22:33:44:55", "Lab-AP", "passA", 1000L)
+        store.saveVerifiedRouter(router1)
+
+        // Router 2 has different BSSID but identical SSID
+        val differentBssid = "AA:BB:CC:DD:EE:FF"
+        assertFalse(store.isRouterVerified(differentBssid, "Lab-AP"))
+        assertNull(store.getVerifiedPassword(differentBssid, "Lab-AP"))
+    }
 }
 
 class FakeSharedPreferences : SharedPreferences {

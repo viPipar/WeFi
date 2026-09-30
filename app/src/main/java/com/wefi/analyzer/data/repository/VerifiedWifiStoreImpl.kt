@@ -27,11 +27,18 @@ class VerifiedWifiStoreImpl(
     override val verifiedRouters: StateFlow<List<VerifiedLabRouter>> = _verifiedRouters.asStateFlow()
 
     @Synchronized
+    private fun matchesRouter(router: VerifiedLabRouter, bssid: String, ssid: String): Boolean {
+        return if (bssid.isNotBlank()) {
+            router.bssid.equals(bssid, ignoreCase = true)
+        } else {
+            ssid.isNotBlank() && router.ssid == ssid
+        }
+    }
+
+    @Synchronized
     override fun saveVerifiedRouter(router: VerifiedLabRouter) {
         val current = _verifiedRouters.value.toMutableList()
-        val index = current.indexOfFirst {
-            (it.bssid.isNotBlank() && it.bssid.equals(router.bssid, ignoreCase = true)) || it.ssid == router.ssid
-        }
+        val index = current.indexOfFirst { matchesRouter(it, router.bssid, router.ssid) }
         if (index >= 0) {
             current[index] = router
         } else {
@@ -42,15 +49,11 @@ class VerifiedWifiStoreImpl(
     }
 
     override fun isRouterVerified(bssid: String, ssid: String): Boolean {
-        return _verifiedRouters.value.any {
-            (it.bssid.isNotBlank() && it.bssid.equals(bssid, ignoreCase = true)) || (it.ssid.isNotBlank() && it.ssid == ssid)
-        }
+        return _verifiedRouters.value.any { matchesRouter(it, bssid, ssid) }
     }
 
     override fun getVerifiedPassword(bssid: String, ssid: String): String? {
-        return _verifiedRouters.value.firstOrNull {
-            (it.bssid.isNotBlank() && it.bssid.equals(bssid, ignoreCase = true)) || (it.ssid.isNotBlank() && it.ssid == ssid)
-        }?.workingPassword
+        return _verifiedRouters.value.firstOrNull { matchesRouter(it, bssid, ssid) }?.workingPassword
     }
 
     @Synchronized

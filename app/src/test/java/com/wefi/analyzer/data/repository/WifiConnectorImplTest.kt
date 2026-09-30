@@ -73,4 +73,17 @@ class WifiConnectorImplTest {
         assertEquals(WifiConnectStatus.Failed, connector.connectState.value.status)
         assertTrue(connector.connectState.value.message.contains("WEP"))
     }
+
+    @Test
+    fun isCurrentlyConnectedTo_whenWifiManagerNull_returnsFalse() {
+        val connected = connector.isCurrentlyConnectedTo("Lab-AP", "00:11:22:33:44:55")
+        assertEquals(false, connected)
+    }
+
+    @Test
+    fun connect_withBssid_doesNotCrash() = runTest(testDispatcher) {
+        connector.connect("Lab-AP", "12345678", WifiSecurityType.WPA2, "00:11:22:33:44:55")
+        // Since ConnectivityManager is null in test setup, it safely records failure without throwing
+        assertEquals(WifiConnectStatus.Failed, connector.connectState.value.status)
+    }
 }

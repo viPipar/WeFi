@@ -600,6 +600,8 @@ private class FakeWifiConnector : WifiConnector {
 
     var lastConnectSsid: String? = null
     var lastConnectPassword: String? = null
+    var lastConnectBssid: String? = null
+    var isCurrentlyConnectedResult = false
     var cancelCalled = false
     var lastForgottenSsid: String? = null
     var allowConnect = true
@@ -618,9 +620,12 @@ private class FakeWifiConnector : WifiConnector {
 
     override fun remainingCooldownSeconds(ssid: String): Int = if (allowConnect) 0 else 5
 
-    override fun connect(ssid: String, password: String, securityType: WifiSecurityType) {
+    override fun isCurrentlyConnectedTo(ssid: String, bssid: String): Boolean = isCurrentlyConnectedResult
+
+    override fun connect(ssid: String, password: String, securityType: WifiSecurityType, bssid: String) {
         lastConnectSsid = ssid
         lastConnectPassword = password
+        lastConnectBssid = bssid
         _connectState.value = WifiConnectState(
             targetSsid = ssid,
             status = WifiConnectStatus.WaitingApproval,

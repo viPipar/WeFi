@@ -14,7 +14,8 @@ interface WifiConnector {
 
     fun canConnect(ssid: String): ConnectCheckResult
     fun remainingCooldownSeconds(ssid: String): Int
-    fun connect(ssid: String, password: String, securityType: WifiSecurityType)
+    fun connect(ssid: String, password: String, securityType: WifiSecurityType, bssid: String = "")
+    fun isCurrentlyConnectedTo(ssid: String, bssid: String = ""): Boolean = false
     fun cancel()
     fun forgetNetwork(ssid: String)
     fun teardown()
