@@ -1,0 +1,74 @@
+[
+  {
+    "cveId": "CVE-2021-36260",
+    "vendor": "Hikvision",
+    "affectedModels": "DS-2CD,DS-2DE",
+    "affectedFirmware": "V5.3.0,V5.4.0,V5.5.0",
+    "cvss": 9.8,
+    "severity": "CRITICAL",
+    "description": "Command injection vulnerability in the web server input validation of certain Hikvision IP camera models allowing remote code execution via specially crafted messages."
+  },
+  {
+    "cveId": "CVE-2017-7921",
+    "vendor": "Hikvision",
+    "affectedModels": "IPC,NVR,DS-2CD",
+    "affectedFirmware": "V5.2.0,V5.3.0,V5.4.0",
+    "cvss": 8.8,
+    "severity": "HIGH",
+    "description": "Improper authentication vulnerability in certain Hikvision IP cameras allowing unauthenticated users to obtain device configuration snapshots."
+  },
+  {
+    "cveId": "CVE-2021-33044",
+    "vendor": "Dahua",
+    "affectedModels": "IPC-HDBW,IPC-HDW,NVR",
+    "affectedFirmware": "V2.800",
+    "cvss": 9.8,
+    "severity": "CRITICAL",
+    "description": "Identity authentication bypass vulnerability in some Dahua products during network packet authentication allowing unauthorized access to services."
+  },
+  {
+    "cveId": "CVE-2022-30563",
+    "vendor": "Dahua",
+    "affectedModels": "IPC,NVR,SD-Series",
+    "affectedFirmware": "V2.820,V2.840",
+    "cvss": 7.5,
+    "severity": "HIGH",
+    "description": "ONVIF WS-UsernameToken authentication replay vulnerability in certain Dahua cameras allowing unauthorized configuration read."
+  },
+  {
+    "cveId": "CVE-2023-1389",
+    "vendor": "TP-Link",
+    "affectedModels": "Archer AX21,AX1800",
+    "affectedFirmware": "1.1.4 Build 20230219",
+    "cvss": 8.8,
+    "severity": "HIGH",
+    "description": "Unauthenticated command injection vulnerability in the web management interface country locale parameter."
+  },
+  {
+    "cveId": "CVE-2020-10987",
+    "vendor": "Tenda",
+    "affectedModels": "AC11,AC9,AC10",
+    "affectedFirmware": "V15.03.06.23",
+    "cvss": 8.8,
+    "severity": "HIGH",
+    "description": "Remote code execution vulnerability in web service goform/setUsbUnload parameter via buffer overflow."
+  },
+  {
+    "cveId": "CVE-2018-0296",
+    "vendor": "Cisco",
+    "affectedModels": "ASA 5500,RV130",
+    "affectedFirmware": "9.8.2,1.0.3",
+    "cvss": 7.5,
+    "severity": "HIGH",
+    "description": "Denial of service and information disclosure vulnerability in the web server of Cisco ASA and RV-series routers."
+  },
+  {
+    "cveId": "CVE-2023-28771",
+    "vendor": "Zyxel",
+    "affectedModels": "ATP,USG FLEX,VPN",
+    "affectedFirmware": "4.32,5.35",
+    "cvss": 9.8,
+    "severity": "CRITICAL",
+    "description": "Improper error message handling in the IKE packet parser leading to remote command execution on firewall gateways."
+  }
+]

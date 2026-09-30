@@ -73,6 +73,8 @@ fun ContextualHelpDrawer(
                 2 -> ChannelRatingHelpContent()
                 3 -> SpeedTestHelpContent()
                 4 -> AroundCheckHelpContent()
+                5 -> DiscoveryHelpContent()
+                else -> DiscoveryHelpContent()
             }
             Spacer(modifier = Modifier.height(32.dp))
         }
@@ -284,5 +286,31 @@ private fun AroundCheckHelpContent() {
         title = "Arti Indikator Status",
         description = "Belum diuji (abu-abu), Sedang diuji (biru animasi), Cocok (hijau), Gagal (merah), Tidak diizinkan (slate), Error (kuning).",
         icon = Icons.Rounded.CheckCircle
+    )
+}
+
+@Composable
+private fun DiscoveryHelpContent() {
+    HelpSectionHeader(
+        title = "Panduan Audit Penemuan Jaringan",
+        subtitle = "Observasi topologi internal lab, CCTV simulator, dan servis terbuka"
+    )
+
+    HelpCard(
+        title = "Metode Deteksi (Non-Root)",
+        description = "Menggunakan pendekatan hibrida: SSDP multicast, mDNS resmi Android NsdManager, dan TCP connect scan berkecepatan tinggi ke port lab (80, 443, 554 RTSP, 3702 ONVIF).",
+        icon = Icons.Rounded.Lightbulb
+    )
+
+    HelpCard(
+        title = "Restriksi ICMP & ARP di Android",
+        description = "Android membatasi soket raw ICMP dan pembacaan /proc/net/arp pada perangkat non-root. Sistem mengandalkan TCP probe dan header broadcast protokol resmi untuk mendeteksi keaktifan host.",
+        icon = Icons.Rounded.Warning
+    )
+
+    HelpCard(
+        title = "Proteksi Keamanan Jaringan Lab",
+        description = "Dilengkapi token bucket rate-limiter maksimal 200 paket/detik, jeda pendinginan (cooldown) 30 detik per host, serta deteksi Circuit Breaker jika Client Isolation aktif.",
+        icon = Icons.Rounded.Security
     )
 }

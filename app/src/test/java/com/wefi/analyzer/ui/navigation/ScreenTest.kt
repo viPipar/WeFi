@@ -8,9 +8,9 @@ import org.junit.Test
 class ScreenTest {
 
     @Test
-    fun screenItems_containsAllFiveScreens() {
+    fun screenItems_containsAllScreens() {
         val items = Screen.items
-        assertEquals(5, items.size)
+        assertEquals(6, items.size)
     }
 
     @Test
@@ -40,6 +40,7 @@ class ScreenTest {
         assertEquals(Screen.ChannelRating, Screen.findByRoute("rating"))
         assertEquals(Screen.SpeedTest, Screen.findByRoute("speedtest"))
         assertEquals(Screen.AroundCheck, Screen.findByRoute("around_check"))
+        assertEquals(Screen.Discovery, Screen.findByRoute("discovery"))
         assertEquals(Screen.ChannelGraph, Screen.findByRoute("unknown_route"))
         assertEquals(Screen.ChannelGraph, Screen.findByRoute(null))
     }

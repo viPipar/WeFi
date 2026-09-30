@@ -1,0 +1,28 @@
+# IEEE OUI Database Subset for Lab Network Discovery
+# Format: PREFIX,VENDOR_NAME
+BC:AD:28,Hikvision
+C0:56:E3,Hikvision
+4C:BD:8F,Hikvision
+54:C4:15,Hikvision
+4C:11:BF,Dahua Technology
+E0:50:8B,Dahua Technology
+90:02:A9,Dahua Technology
+3C:EF:8C,Dahua Technology
+00:40:8C,Axis Communications
+AC:84:C6,Axis Communications
+00:1A:E8,Axis Communications
+50:C7:BF,TP-Link Technologies
+00:31:92,TP-Link Technologies
+98:48:27,TP-Link Technologies
+E8:48:B8,TP-Link Technologies
+24:A1:60,Espressif Inc.
+30:AE:A4,Espressif Inc.
+00:1A:2B,Cisco Systems
+00:26:0B,Cisco Systems
+78:8A:20,Ubiquiti Inc.
+24:5A:4C,Ubiquiti Inc.
+B8:27:EB,Raspberry Pi Foundation
+DC:A6:32,Raspberry Pi Foundation
+E4:5F:01,Raspberry Pi Foundation
+00:11:32,Synology Inc.
+00:08:9B,QNAP Systems

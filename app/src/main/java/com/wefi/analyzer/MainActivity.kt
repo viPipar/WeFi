@@ -52,9 +52,12 @@ import com.wefi.analyzer.data.repository.VerifiedWifiStoreImpl
 import com.wefi.analyzer.ui.theme.WeFiTheme
 
 import com.wefi.analyzer.data.repository.DeviceHardwareRepositoryImpl
+import com.wefi.analyzer.data.repository.NetworkDiscoveryRepositoryImpl
 import com.wefi.analyzer.domain.repository.DeviceHardwareRepository
 import com.wefi.analyzer.ui.components.HardwareStateBanner
 import com.wefi.analyzer.ui.screens.diagnostic.DiagnosticRecoveryScreen
+import com.wefi.analyzer.ui.screens.discovery.NetworkDiscoveryScreen
+import com.wefi.analyzer.ui.screens.discovery.NetworkDiscoveryViewModel
 
 class MainActivity : ComponentActivity() {
 
@@ -63,6 +66,7 @@ class MainActivity : ComponentActivity() {
     private var hardwareRepository: DeviceHardwareRepositoryImpl? = null
     private var wifiScanner: WifiScannerImpl? = null
     private var wifiConnector: WifiConnectorImpl? = null
+    private var discoveryRepository: NetworkDiscoveryRepositoryImpl? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -78,12 +82,14 @@ class MainActivity : ComponentActivity() {
             val auditLogger = WifiAuditLoggerImpl()
             val connector = WifiConnectorImpl(context = applicationContext, auditLogger = auditLogger)
             val verifiedStore = VerifiedWifiStoreImpl(applicationContext)
+            val discoveryRepo = NetworkDiscoveryRepositoryImpl(applicationContext)
 
             scannerRepository = scannerRepo
             connectionRepository = connectionRepo
             hardwareRepository = hardwareRepo
             wifiScanner = scanner
             wifiConnector = connector
+            discoveryRepository = discoveryRepo
 
             // Inisialisasi ViewModels
             val channelGraphViewModel = ChannelGraphViewModel(scannerRepo, connectionRepo)
@@ -96,6 +102,7 @@ class MainActivity : ComponentActivity() {
                 auditLogger = auditLogger,
                 verifiedStore = verifiedStore
             )
+            val networkDiscoveryViewModel = NetworkDiscoveryViewModel(discoveryRepo)
 
             setContent {
                 WeFiTheme {
@@ -105,6 +112,7 @@ class MainActivity : ComponentActivity() {
                         channelRatingViewModel = channelRatingViewModel,
                         speedTestViewModel = speedTestViewModel,
                         aroundCheckViewModel = aroundCheckViewModel,
+                        networkDiscoveryViewModel = networkDiscoveryViewModel,
                         hardwareRepository = hardwareRepo,
                         onTriggerInitialScan = { scannerRepo.startScan() }
                     )
@@ -142,6 +150,7 @@ class MainActivity : ComponentActivity() {
             hardwareRepository?.teardown()
             wifiScanner?.teardown()
             wifiConnector?.teardown()
+            discoveryRepository?.teardown()
         } catch (e: Exception) {
             android.util.Log.w("MainActivity", "Gagal membersihkan repository", e)
         }
@@ -156,6 +165,7 @@ fun MainAppShell(
     channelRatingViewModel: ChannelRatingViewModel,
     speedTestViewModel: SpeedTestViewModel,
     aroundCheckViewModel: AroundCheckViewModel,
+    networkDiscoveryViewModel: NetworkDiscoveryViewModel,
     hardwareRepository: DeviceHardwareRepository,
     onTriggerInitialScan: () -> Unit
 ) {
@@ -241,6 +251,7 @@ fun MainAppShell(
                     Screen.ChannelRating -> ChannelRatingScreen(viewModel = channelRatingViewModel)
                     Screen.SpeedTest -> SpeedTestScreen(viewModel = speedTestViewModel)
                     Screen.AroundCheck -> AroundCheckScreen(viewModel = aroundCheckViewModel)
+                    Screen.Discovery -> NetworkDiscoveryScreen(viewModel = networkDiscoveryViewModel)
                 }
 
                 // Juicy Morphing Floating Help Button (Melayang di atas konten)

@@ -3,6 +3,7 @@ package com.wefi.analyzer.ui.navigation
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.FormatListBulleted
 import androidx.compose.material.icons.rounded.AutoGraph
+import androidx.compose.material.icons.rounded.DeviceHub
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.StarRate
@@ -19,10 +20,11 @@ sealed class Screen(
     data object ChannelRating : Screen("rating", "Rating", Icons.Rounded.StarRate, 2)
     data object SpeedTest : Screen("speedtest", "Speedtest", Icons.Rounded.Speed, 3)
     data object AroundCheck : Screen("around_check", "Around", Icons.Rounded.Security, 4)
+    data object Discovery : Screen("discovery", "Audit", Icons.Rounded.DeviceHub, 5)
 
     companion object {
         val items: List<Screen>
-            get() = listOf(ChannelGraph, ApList, ChannelRating, SpeedTest, AroundCheck)
+            get() = listOf(ChannelGraph, ApList, ChannelRating, SpeedTest, AroundCheck, Discovery)
 
         fun findByRoute(route: String?): Screen = when (route) {
             ChannelGraph.route -> ChannelGraph
@@ -30,6 +32,7 @@ sealed class Screen(
             ChannelRating.route -> ChannelRating
             SpeedTest.route -> SpeedTest
             AroundCheck.route -> AroundCheck
+            Discovery.route -> Discovery
             else -> ChannelGraph
         }
     }

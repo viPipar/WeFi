@@ -55,6 +55,23 @@ Offers three operational modes for testing Wi-Fi networks:
 - On networks with internet access: measures real-time Ping latency, Jitter, Download throughput, and Upload throughput.
 - On isolated lab networks without internet access: automatically detects the lack of WAN connection and activates **Mode Lab Offline**, displaying negotiated link speed, IP configuration, and gateway status without crashing or throwing unhandled exceptions.
 
+### 5. Network Discovery & Lab Audit (Educational Observability)
+A strictly read-only, non-root network discovery and topology enumeration module for isolated lab environments (e.g. lab routers and CCTV simulators):
+- **Hybrid Ping Sweep:** Automatically calculates local subnet from `WifiManager.dhcpInfo`. Probes hosts using `InetAddress.isReachable()` with non-blocking fallback to TCP connect on ports 80, 443, 554, and 22 with a 32-coroutine concurrency limit (`Semaphore(32)`).
+- **TCP Connect Port Scan:** Audits 13 standard lab ports (`22, 23, 53, 80, 443, 554, 8000, 8080, 8443, 3702, 37777, 5000, 8888`) with 500ms timeout per port and 64-coroutine concurrency. No SYN scan or root required.
+- **mDNS & SSDP Discovery:** Uses Android's official `NsdManager` and UDP multicast (`239.255.255.250:1900` with `MulticastLock`) to discover broadcasted UPnP services, camera streams, and web consoles.
+- **MAC OUI & Offline CVE Matching:** Identifies vendors using an offline IEEE OUI dataset (`assets/oui_database.csv`) and correlates identified services/firmware against a curated offline CVE snapshot (`assets/cve_catalog.json`) for informational auditing only.
+- **Safety Throttling & Circuit Breaker:** Implements a token bucket rate-limiter (maximum 200 packets/second), 30-second per-host cooldown, and automated Circuit Breaker detection when client isolation prevents host discovery.
+- **Export Engine:** One-tap export to structured JSON and human-readable audit text reports.
+
+#### Android Technical Limitations & Mitigations
+| Android Constraint | Technical Limitation | Mitigation / Architecture Solution |
+| :--- | :--- | :--- |
+| **Raw ICMP Sockets** | Android SELinux sandbox blocks non-root apps from creating raw ICMP sockets. | `InetAddress.isReachable()` with non-blocking TCP connect fallback to ports 80/443/554/22. |
+| **ARP Cache Access** | Android 10+ (API 29+) restricts reading `/proc/net/arp` without root. | Fallback vendor identification via SSDP/mDNS service headers; best-effort ARP on legacy Android. |
+| **Multicast Packet Filtering** | Chipset/kernel Wi-Fi power saver drops incoming multicast packets by default. | Explicitly acquire `WifiManager.MulticastLock` with `CHANGE_WIFI_MULTICAST_STATE` during SSDP. |
+| **AP Client Isolation** | Strict lab access points may isolate wireless clients from observing peers. | Built-in circuit breaker heuristic warns user if 0 hosts are found, suggesting AP configuration review. |
+
 ---
 
 ## Architecture & Data Model
