@@ -3,6 +3,8 @@ package com.wefi.analyzer.ui.screens.aroundcheck
 import android.content.Intent
 import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -31,6 +33,7 @@ import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.HourglassBottom
 import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.LocationOff
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Timer
@@ -42,6 +45,8 @@ import androidx.compose.material.icons.rounded.WifiTethering
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -50,6 +55,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -61,13 +69,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -88,6 +95,8 @@ import com.wefi.analyzer.ui.theme.BlynkBlueTint
 import com.wefi.analyzer.ui.theme.QualityAmber
 import com.wefi.analyzer.ui.theme.QualityGreen
 import com.wefi.analyzer.ui.theme.QualityRed
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -112,6 +121,16 @@ fun AroundCheckScreen(
     val sequentialTestMessage by viewModel.sequentialTestMessage.collectAsState()
     val auditLogs by viewModel.auditLogs.collectAsState()
     val showAuditSheet by viewModel.showAuditBottomSheet.collectAsState()
+
+    val snackbarHostState = remember { SnackbarHostState() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+    LaunchedEffect(Unit) {
+        viewModel.snackbarEvent.collect { message ->
+            snackbarHostState.showSnackbar(message)
+        }
+    }
+
     var currentTickerSeconds by remember { mutableLongStateOf(System.currentTimeMillis() / 1000) }
     LaunchedEffect(Unit) {
         while (isActive) {
@@ -137,7 +156,7 @@ fun AroundCheckScreen(
         }
     }
 
-    // Dialog Input Password (Masked + Toggle)
+    // Dialog Input Password Manual (Masked + Toggle)
     if (selectedItemForDialog != null) {
         val targetItem = selectedItemForDialog!!
         AlertDialog(
@@ -154,7 +173,7 @@ fun AroundCheckScreen(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Sambungkan Wi-Fi",
+                        text = "Sambungkan Wi-Fi Lab",
                         fontWeight = FontWeight.Bold,
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface
@@ -197,6 +216,7 @@ fun AroundCheckScreen(
                             imeAction = ImeAction.Done
                         ),
                         keyboardActions = KeyboardActions(onDone = {
+                            keyboardController?.hide()
                             viewModel.submitConnect()
                         }),
                         singleLine = true,
@@ -210,17 +230,20 @@ fun AroundCheckScreen(
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Text(
-                        text = "Sistem Android akan menampilkan dialog persetujuan OS. Password tidak disimpan.",
+                        text = "Dialog resmi OS Android akan muncul meminta persetujuan. Password tidak pernah disimpan.",
                         style = MaterialTheme.typography.bodySmall,
-                        fontSize = 10.5.sp,
+                        fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        lineHeight = 13.sp
+                        lineHeight = 14.sp
                     )
                 }
             },
             confirmButton = {
                 Button(
-                    onClick = { viewModel.submitConnect() },
+                    onClick = {
+                        keyboardController?.hide()
+                        viewModel.submitConnect()
+                    },
                     shape = RoundedCornerShape(10.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = BlynkBlue),
                     enabled = targetItem.security == WifiSecurityType.OPEN || passwordInput.isNotBlank()
@@ -236,444 +259,547 @@ fun AroundCheckScreen(
         )
     }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(horizontal = 16.dp)
-    ) {
-        Spacer(modifier = Modifier.height(10.dp))
-
-        // Bar Input Field & Tombol Search di Bagian Paling Atas
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        containerColor = MaterialTheme.colorScheme.background,
+        modifier = modifier.fillMaxSize()
+    ) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(horizontal = 16.dp)
         ) {
-            OutlinedTextField(
-                value = topPasswordInput,
-                onValueChange = { viewModel.setTopPasswordInput(it) },
-                modifier = Modifier.weight(1f),
-                label = { Text("Password Wi-Fi Lab", fontSize = 12.sp) },
-                placeholder = { Text("Masukkan passphrase...", fontSize = 12.sp) },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Rounded.Key,
-                        contentDescription = null,
-                        tint = BlynkBlue,
-                        modifier = Modifier.size(20.dp)
-                    )
-                },
-                trailingIcon = {
-                    IconButton(onClick = { viewModel.toggleTopPasswordVisibility() }) {
-                        Icon(
-                            imageVector = if (isTopPasswordVisible) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff,
-                            contentDescription = "Toggle password visibility",
-                            modifier = Modifier.size(20.dp)
-                        )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // 1. Unified Top Card: Passphrase Input & Sequential Search Button
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
+                shadowElevation = 2.dp,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(26.dp)
+                                    .clip(CircleShape)
+                                    .background(BlynkBlueTint),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Key,
+                                    contentDescription = null,
+                                    tint = BlynkBlue,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Pencarian & Uji Sekuensial",
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+
+                        if (isSequentialTesting) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color(0xFFFEF3C7)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(10.dp),
+                                        strokeWidth = 1.5.dp,
+                                        color = QualityAmber
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "AKTIF",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF92400E)
+                                    )
+                                }
+                            }
+                        }
                     }
-                },
-                visualTransformation = if (isTopPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Password,
-                    imeAction = ImeAction.Search
-                ),
-                keyboardActions = KeyboardActions(onSearch = {
-                    if (!isSequentialTesting) viewModel.startSequentialTest()
-                }),
-                singleLine = true,
-                shape = RoundedCornerShape(12.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = BlynkBlue,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
-                ),
-                enabled = !isSequentialTesting
-            )
 
-            Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
-            if (isSequentialTesting) {
-                Button(
-                    onClick = { viewModel.cancelSequentialTest() },
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = QualityRed),
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 14.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Close,
-                        contentDescription = "Hentikan",
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Batal", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                }
-            } else {
-                Button(
-                    onClick = { viewModel.startSequentialTest() },
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = BlynkBlue),
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 14.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Search,
-                        contentDescription = "Cari",
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Cari", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = topPasswordInput,
+                            onValueChange = { viewModel.setTopPasswordInput(it) },
+                            modifier = Modifier.weight(1f),
+                            label = { Text("Password Wi-Fi Lab", fontSize = 12.sp) },
+                            placeholder = { Text("Masukkan passphrase target...", fontSize = 12.sp) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Rounded.Lock,
+                                    contentDescription = null,
+                                    tint = BlynkBlue,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            },
+                            trailingIcon = {
+                                IconButton(onClick = { viewModel.toggleTopPasswordVisibility() }) {
+                                    Icon(
+                                        imageVector = if (isTopPasswordVisible) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff,
+                                        contentDescription = "Toggle password",
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            },
+                            visualTransformation = if (isTopPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Password,
+                                imeAction = ImeAction.Search
+                            ),
+                            keyboardActions = KeyboardActions(onSearch = {
+                                keyboardController?.hide()
+                                if (!isSequentialTesting) viewModel.startSequentialTest()
+                            }),
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = BlynkBlue,
+                                unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                            ),
+                            enabled = !isSequentialTesting
+                        )
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        if (isSequentialTesting) {
+                            Button(
+                                onClick = { viewModel.cancelSequentialTest() },
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = QualityRed),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 14.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Close,
+                                    contentDescription = "Hentikan",
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Batal", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            }
+                        } else {
+                            Button(
+                                onClick = {
+                                    keyboardController?.hide()
+                                    viewModel.startSequentialTest()
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = BlynkBlue),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 14.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Search,
+                                    contentDescription = "Cari",
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Cari", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            }
+                        }
+                    }
                 }
             }
-        }
 
-        // Banner Status Pengujian Sekuensial
-        if (isSequentialTesting || sequentialTestMessage.isNotBlank()) {
-            Spacer(modifier = Modifier.height(8.dp))
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                color = when {
-                    isSequentialTesting -> Color(0xFFEFF6FF)
-                    sequentialTestMessage.contains("Berhasil") -> Color(0xFFDCFCE7)
-                    else -> Color(0xFFF3F4F6)
-                },
-                border = BorderStroke(
-                    1.dp,
-                    when {
-                        isSequentialTesting -> BlynkBlue.copy(alpha = 0.3f)
-                        sequentialTestMessage.contains("Berhasil") -> QualityGreen.copy(alpha = 0.3f)
-                        else -> Color(0xFFE5E7EB)
-                    }
-                )
+            // 2. Animated Sequential Progress Banner
+            AnimatedVisibility(
+                visible = isSequentialTesting || sequentialTestMessage.isNotBlank(),
+                enter = fadeIn(),
+                exit = fadeOut()
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                Column {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        color = when {
+                            isSequentialTesting -> Color(0xFFEFF6FF)
+                            sequentialTestMessage.contains("Berhasil") -> Color(0xFFDCFCE7)
+                            else -> Color(0xFFF8FAFC)
+                        },
+                        border = BorderStroke(
+                            1.dp,
+                            when {
+                                isSequentialTesting -> BlynkBlue.copy(alpha = 0.4f)
+                                sequentialTestMessage.contains("Berhasil") -> QualityGreen.copy(alpha = 0.4f)
+                                else -> Color(0xFFE2E8F0)
+                            }
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (isSequentialTesting) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    color = BlynkBlue,
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                            } else if (sequentialTestMessage.contains("Berhasil")) {
+                                Icon(
+                                    imageVector = Icons.Rounded.CheckCircle,
+                                    contentDescription = null,
+                                    tint = QualityGreen,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                            }
+                            Text(
+                                text = sequentialTestMessage,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = when {
+                                    isSequentialTesting -> BlynkBlueDark
+                                    sequentialTestMessage.contains("Berhasil") -> Color(0xFF15803D)
+                                    else -> MaterialTheme.colorScheme.onSurface
+                                },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // 3. Header Toolbar: Title, Timestamp, Audit Log, and SCAN Button
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "AROUND CHECK",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+
+                    val relativeTimeText = if (lastScanTime > 0L) {
+                        val diffSec = maxOf(0L, currentTickerSeconds - (lastScanTime / 1000))
+                        "Data dari $diffSec detik lalu"
+                    } else {
+                        "Memuat data cache..."
+                    }
+
+                    Text(
+                        text = relativeTimeText,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontSize = 11.5.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { viewModel.setShowAuditBottomSheet(true) }) {
+                        Box {
+                            Icon(
+                                imageVector = Icons.Rounded.History,
+                                contentDescription = "Audit Log",
+                                tint = BlynkBlue
+                            )
+                            if (auditLogs.isNotEmpty()) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(7.dp)
+                                        .clip(CircleShape)
+                                        .background(QualityGreen)
+                                        .align(Alignment.TopEnd)
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(4.dp))
+
+                    val isScanCoolingDown = remainingScanCooldown > 0
+                    Button(
+                        onClick = { viewModel.startScan() },
+                        enabled = !isScanCoolingDown,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = BlynkBlue,
+                            disabledContainerColor = BlynkBlue.copy(alpha = 0.4f)
+                        ),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isScanCoolingDown) Icons.Rounded.HourglassBottom else Icons.Rounded.Refresh,
+                            contentDescription = "Scan",
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = if (isScanCoolingDown) "SCAN (${remainingScanCooldown}s)" else "SCAN",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Warning Banners (Lokasi / Izin)
+            val isLocDisabled = scanState is WifiScanState.LocationDisabled ||
+                (scanState is WifiScanState.Error && (scanState as WifiScanState.Error).isLocationDisabled)
+
+            if (isLocDisabled) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    color = Color(0xFFFEF3C7),
+                    border = BorderStroke(1.dp, QualityAmber.copy(alpha = 0.5f))
                 ) {
-                    if (isSequentialTesting) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Rounded.LocationOff,
+                                contentDescription = null,
+                                tint = QualityAmber,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Layanan Lokasi Nonaktif",
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color(0xFF92400E)
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Sistem Android mewajibkan layanan lokasi aktif untuk memindai jaringan Wi-Fi sekitar.",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontSize = 11.5.sp,
+                            color = Color(0xFF78350F)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(
+                            onClick = {
+                                val intent = Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
+                                context.startActivity(intent)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = QualityAmber),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                        ) {
+                            Text("Buka Pengaturan Lokasi", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+            }
+
+            if (scanState is WifiScanState.PermissionMissing) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    color = Color(0xFFFEE2E2),
+                    border = BorderStroke(1.dp, QualityRed.copy(alpha = 0.5f))
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Rounded.Warning,
+                                contentDescription = null,
+                                tint = QualityRed,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Izin Pemindaian Belum Diberikan",
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color(0xFF991B1B)
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Aplikasi membutuhkan izin ACCESS_FINE_LOCATION atau NEARBY_WIFI_DEVICES.",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontSize = 11.5.sp,
+                            color = Color(0xFF7F1D1D)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(
+                            onClick = {
+                                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                    data = android.net.Uri.fromParts("package", context.packageName, null)
+                                }
+                                context.startActivity(intent)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = QualityRed),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                        ) {
+                            Text("Buka Pengaturan Aplikasi", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+            }
+
+            if (scanState is WifiScanState.Scanning) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = BlynkBlueTint,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(16.dp),
                             color = BlynkBlue,
                             strokeWidth = 2.dp
                         )
                         Spacer(modifier = Modifier.width(10.dp))
-                    } else if (sequentialTestMessage.contains("Berhasil")) {
-                        Icon(
-                            imageVector = Icons.Rounded.CheckCircle,
-                            contentDescription = null,
-                            tint = QualityGreen,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                    }
-                    Text(
-                        text = sequentialTestMessage,
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = when {
-                            isSequentialTesting -> BlynkBlueDark
-                            sequentialTestMessage.contains("Berhasil") -> Color(0xFF15803D)
-                            else -> MaterialTheme.colorScheme.onSurface
-                        },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        // Header Toolbar
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column {
-                Text(
-                    text = "AROUND CHECK",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-
-                // Timestamp Data dari X detik lalu
-                val relativeTimeText = if (lastScanTime > 0L) {
-                    val diffSec = maxOf(0L, currentTickerSeconds - (lastScanTime / 1000))
-                    "Data dari $diffSec detik lalu"
-                } else {
-                    "Memuat data cache..."
-                }
-
-                Text(
-                    text = relativeTimeText,
-                    style = MaterialTheme.typography.bodySmall,
-                    fontSize = 11.5.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // Tombol Audit Log
-                IconButton(onClick = { viewModel.setShowAuditBottomSheet(true) }) {
-                    Box {
-                        Icon(
-                            imageVector = Icons.Rounded.History,
-                            contentDescription = "Audit Log",
-                            tint = BlynkBlue
-                        )
-                        if (auditLogs.isNotEmpty()) {
-                            Box(
-                                modifier = Modifier
-                                    .size(7.dp)
-                                    .clip(CircleShape)
-                                    .background(QualityGreen)
-                                    .align(Alignment.TopEnd)
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.width(4.dp))
-
-                // Tombol SCAN dengan indikator Cooldown Golden Time
-                val isScanCoolingDown = remainingScanCooldown > 0
-                Button(
-                    onClick = { viewModel.startScan() },
-                    enabled = !isScanCoolingDown,
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = BlynkBlue,
-                        disabledContainerColor = BlynkBlue.copy(alpha = 0.4f)
-                    ),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                ) {
-                    Icon(
-                        imageVector = if (isScanCoolingDown) Icons.Rounded.HourglassBottom else Icons.Rounded.Refresh,
-                        contentDescription = "Scan",
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = if (isScanCoolingDown) "SCAN (${remainingScanCooldown}s)" else "SCAN",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        // Banner Peringatan Lokasi Nonaktif
-        val isLocDisabled = scanState is WifiScanState.LocationDisabled ||
-            (scanState is WifiScanState.Error && (scanState as WifiScanState.Error).isLocationDisabled)
-
-        if (isLocDisabled) {
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                color = Color(0xFFFEF3C7),
-                border = BorderStroke(1.dp, QualityAmber.copy(alpha = 0.5f))
-            ) {
-                Column(modifier = Modifier.padding(14.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Rounded.LocationOff,
-                            contentDescription = null,
-                            tint = QualityAmber,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Layanan Lokasi Nonaktif",
-                            fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = Color(0xFF92400E)
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = "Sistem Android mewajibkan layanan lokasi aktif untuk memindai jaringan Wi-Fi sekitar.",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontSize = 11.5.sp,
-                        color = Color(0xFF78350F)
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Button(
-                        onClick = {
-                            val intent = Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
-                            context.startActivity(intent)
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = QualityAmber),
-                        shape = RoundedCornerShape(10.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-                    ) {
-                        Text("Buka Pengaturan Lokasi", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.height(10.dp))
-        }
-
-        // Banner Peringatan Izin Missing
-        if (scanState is WifiScanState.PermissionMissing) {
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                color = Color(0xFFFEE2E2),
-                border = BorderStroke(1.dp, QualityRed.copy(alpha = 0.5f))
-            ) {
-                Column(modifier = Modifier.padding(14.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Rounded.Warning,
-                            contentDescription = null,
-                            tint = QualityRed,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Izin Pemindaian Belum Diberikan",
-                            fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = Color(0xFF991B1B)
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = "Aplikasi membutuhkan izin ACCESS_FINE_LOCATION atau NEARBY_WIFI_DEVICES untuk membaca daftar Wi-Fi sekitar.",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontSize = 11.5.sp,
-                        color = Color(0xFF7F1D1D)
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Button(
-                        onClick = {
-                            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                                data = android.net.Uri.fromParts("package", context.packageName, null)
-                            }
-                            context.startActivity(intent)
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = QualityRed),
-                        shape = RoundedCornerShape(10.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-                    ) {
-                        Text("Buka Pengaturan Aplikasi", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.height(10.dp))
-        }
-
-        // Indikator Status Pemindaian
-        when (val state = scanState) {
-            is WifiScanState.Scanning -> {
-                BlynkCard {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            color = BlynkBlue,
-                            strokeWidth = 2.dp
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Text(
-                            text = "Sedang memindai jaringan sekitar...",
+                            text = "Memindai frekuensi jaringan sekitar...",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = BlynkBlueDark,
+                            fontWeight = FontWeight.Medium
                         )
                     }
                 }
                 Spacer(modifier = Modifier.height(10.dp))
             }
-            is WifiScanState.Error -> {
-                if (!state.isLocationDisabled) {
-                    BlynkCard {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Rounded.Warning,
-                                contentDescription = null,
-                                tint = QualityRed,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = state.message,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = QualityRed
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(10.dp))
-                }
+
+            // 4. Daftar Hasil Pemindaian Wi-Fi (Modern Blynk Tile Style)
+            val scanItems = when (val s = scanState) {
+                is WifiScanState.Success -> s.items
+                is WifiScanState.Throttled -> s.items
+                else -> emptyList()
             }
-            else -> {}
-        }
 
-        // Daftar Hasil Pemindaian Wi-Fi dengan Stable Key
-        val scanItems = when (val s = scanState) {
-            is WifiScanState.Success -> s.items
-            is WifiScanState.Throttled -> s.items
-            else -> emptyList()
-        }
-
-        if (scanItems.isEmpty() && scanState !is WifiScanState.Scanning) {
-            BlynkCard {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+            if (scanItems.isEmpty() && scanState !is WifiScanState.Scanning) {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Wifi,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                        modifier = Modifier.size(48.dp)
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        text = "Belum Ada Jaringan Terdeteksi",
-                        fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "Tekan tombol SCAN di atas untuk memindai jaringan sekitar.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 32.dp, horizontal = 16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Wifi,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f),
+                            modifier = Modifier.size(48.dp)
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "Belum Ada Jaringan Terdeteksi",
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Tekan tombol SCAN di atas untuk memindai router di sekitar Anda.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(bottom = 24.dp)
-            ) {
-                items(
-                    items = scanItems,
-                    key = { it.bssid.ifBlank { it.ssid } }
-                ) { item ->
-                    val cooldownSec = viewModel.getRemainingCooldownForSsid(item.ssid)
-                    val isWaitingApproval = viewModel.isItemWaitingApproval(item.ssid)
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(bottom = 24.dp)
+                ) {
+                    items(
+                        items = scanItems,
+                        key = { it.bssid.ifBlank { it.ssid } }
+                    ) { item ->
+                        val cooldownSec = viewModel.getRemainingCooldownForSsid(item.ssid)
+                        val isWaitingApproval = viewModel.isItemWaitingApproval(item.ssid)
 
-                    WifiScanItemCard(
-                        item = item,
-                        connectState = connectState,
-                        cooldownSeconds = cooldownSec,
-                        isWaitingApproval = isWaitingApproval,
-                        onConnectClick = { viewModel.openPasswordDialog(item) },
-                        onCancelClick = { viewModel.cancelConnect() },
-                        onForgetClick = { viewModel.forgetNetwork(item.ssid) }
-                    )
+                        WifiScanItemCard(
+                            item = item,
+                            connectState = connectState,
+                            cooldownSeconds = cooldownSec,
+                            isWaitingApproval = isWaitingApproval,
+                            onConnectClick = { viewModel.openPasswordDialog(item) },
+                            onCancelClick = { viewModel.cancelConnect() },
+                            onForgetClick = { viewModel.forgetNetwork(item.ssid) },
+                            onCooldownClick = {
+                                viewModel.sendSnackbar("Tunggu cooldown Golden Time ${cooldownSec}s untuk ${item.ssid}")
+                            }
+                        )
+                    }
                 }
             }
+        }
+    }
+}
+
+/**
+ * Visualizer Indikator Bar Sinyal (4 Segmen Berwarna)
+ */
+@Composable
+private fun SignalBarsIndicator(rssi: Int) {
+    val level = when {
+        rssi >= -60 -> 4
+        rssi >= -70 -> 3
+        rssi >= -80 -> 2
+        else -> 1
+    }
+    val barColor = when {
+        rssi >= -65 -> QualityGreen
+        rssi >= -80 -> QualityAmber
+        else -> QualityRed
+    }
+
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.Bottom,
+        modifier = Modifier.height(14.dp)
+    ) {
+        for (i in 1..4) {
+            Box(
+                modifier = Modifier
+                    .width(3.dp)
+                    .height((3 + i * 2.8).dp)
+                    .clip(RoundedCornerShape(1.dp))
+                    .background(if (i <= level) barColor else Color(0xFFE2E8F0))
+            )
         }
     }
 }
@@ -686,14 +812,25 @@ private fun WifiScanItemCard(
     isWaitingApproval: Boolean,
     onConnectClick: () -> Unit,
     onCancelClick: () -> Unit,
-    onForgetClick: () -> Unit
+    onForgetClick: () -> Unit,
+    onCooldownClick: () -> Unit
 ) {
     val isTarget = connectState.targetSsid == item.ssid
     val status = if (isTarget) connectState.status else WifiConnectStatus.Idle
     val isCoolingDown = cooldownSeconds > 0
 
-    BlynkCard {
-        Column(modifier = Modifier.fillMaxWidth()) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(
+            width = if (isTarget) 1.5.dp else 1.dp,
+            color = if (isTarget) BlynkBlue else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+        ),
+        shadowElevation = if (isTarget) 3.dp else 1.dp,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            // Row Atas: Ikon Sinyal + Nama SSID + Badge Keamanan
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -705,7 +842,7 @@ private fun WifiScanItemCard(
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(36.dp)
+                            .size(38.dp)
                             .clip(CircleShape)
                             .background(
                                 when (status) {
@@ -734,7 +871,7 @@ private fun WifiScanItemCard(
                         )
                     }
 
-                    Spacer(modifier = Modifier.width(10.dp))
+                    Spacer(modifier = Modifier.width(12.dp))
 
                     Column {
                         Text(
@@ -743,20 +880,46 @@ private fun WifiScanItemCard(
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurface
                         )
+
+                        Spacer(modifier = Modifier.height(2.dp))
+
+                        // Visualizer Bar Sinyal + dBm + CH + Band
                         Row(verticalAlignment = Alignment.CenterVertically) {
+                            SignalBarsIndicator(rssi = item.rssi)
+                            Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = "${item.rssi} dBm",
                                 style = MaterialTheme.typography.bodySmall,
                                 fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Kanal ${item.channel} (${item.frequencyMhz} MHz)",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = Color(0xFFF1F5F9)
+                            ) {
+                                Text(
+                                    text = if (item.frequencyMhz > 4900) "5 GHz" else "2.4 GHz",
+                                    fontSize = 9.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF475569),
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = Color(0xFFF1F5F9)
+                            ) {
+                                Text(
+                                    text = "CH ${item.channel}",
+                                    fontSize = 9.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF475569),
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -787,7 +950,7 @@ private fun WifiScanItemCard(
                 }
             }
 
-            // Connection Status Banner
+            // Connection Status Banner jika target aktif
             if (isTarget && status != WifiConnectStatus.Idle) {
                 Spacer(modifier = Modifier.height(10.dp))
                 Surface(
@@ -821,11 +984,11 @@ private fun WifiScanItemCard(
                             }
                             Text(
                                 text = when (status) {
-                                    WifiConnectStatus.WaitingApproval -> "Menunggu persetujuan user..."
-                                    WifiConnectStatus.Connected -> "Tersambung"
-                                    WifiConnectStatus.Rejected -> "Ditolak oleh user"
+                                    WifiConnectStatus.WaitingApproval -> "Menunggu konfirmasi dialog OS..."
+                                    WifiConnectStatus.Connected -> "Tersambung ke jaringan"
+                                    WifiConnectStatus.Rejected -> "Ditolak / Batal di dialog OS"
                                     WifiConnectStatus.Failed -> connectState.message.ifBlank { "Gagal tersambung" }
-                                    WifiConnectStatus.Timeout -> "Timeout persetujuan"
+                                    WifiConnectStatus.Timeout -> "Timeout persetujuan (30 detik)"
                                     is WifiConnectStatus.Cooldown -> "Cooldown: tunggu ${status.remainingSeconds}s"
                                     else -> ""
                                 },
@@ -856,7 +1019,7 @@ private fun WifiScanItemCard(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Action Buttons
+            // Row Bawah: Tombol Lupakan Jaringan & Tombol Connect Interaktif
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
@@ -876,14 +1039,18 @@ private fun WifiScanItemCard(
 
                 Spacer(modifier = Modifier.width(8.dp))
 
-                // Tombol Connect dengan status Golden Time Cooldown
-                val isButtonEnabled = !isWaitingApproval && !isCoolingDown
+                // Tombol Connect dengan penanganan Cooldown yang responsif
                 Button(
-                    onClick = onConnectClick,
-                    enabled = isButtonEnabled,
+                    onClick = {
+                        if (isCoolingDown) {
+                            onCooldownClick()
+                        } else if (!isWaitingApproval) {
+                            onConnectClick()
+                        }
+                    },
                     shape = RoundedCornerShape(10.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = BlynkBlue,
+                        containerColor = if (isCoolingDown) QualityAmber else BlynkBlue,
                         disabledContainerColor = BlynkBlue.copy(alpha = 0.35f)
                     ),
                     contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
@@ -898,6 +1065,7 @@ private fun WifiScanItemCard(
                         text = when {
                             status == WifiConnectStatus.Connected -> "Tersambung"
                             isCoolingDown -> "Tunggu (${cooldownSeconds}s)"
+                            isWaitingApproval -> "Memproses..."
                             else -> "Connect"
                         },
                         fontWeight = FontWeight.Bold,

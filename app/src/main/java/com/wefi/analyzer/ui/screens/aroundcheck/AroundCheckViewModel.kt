@@ -16,9 +16,12 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
@@ -76,6 +79,15 @@ class AroundCheckViewModel(
 
     private var sequentialTestJob: Job? = null
 
+    private val _snackbarEvent = MutableSharedFlow<String>()
+    val snackbarEvent: SharedFlow<String> = _snackbarEvent.asSharedFlow()
+
+    fun sendSnackbar(message: String) {
+        viewModelScope.launch(dispatcher) {
+            _snackbarEvent.emit(message)
+        }
+    }
+
     init {
         // Pindai awal saat ViewModel pertama kali dibuat
         startScan()
@@ -131,10 +143,12 @@ class AroundCheckViewModel(
 
     fun cancelConnect() {
         connector.cancel()
+        sendSnackbar("Koneksi dibatalkan")
     }
 
     fun forgetNetwork(ssid: String) {
         connector.forgetNetwork(ssid)
+        sendSnackbar("Jaringan $ssid telah dilupakan")
     }
 
     fun setShowAuditBottomSheet(show: Boolean) {
@@ -177,6 +191,8 @@ class AroundCheckViewModel(
 
         if (scanItems.isEmpty()) {
             _sequentialTestMessage.value = "Daftar Wi-Fi kosong. Silakan scan terlebih dahulu."
+            scanner.startScan()
+            sendSnackbar("Daftar Wi-Fi kosong. Memulai scan otomatis...")
             return
         }
 
@@ -207,6 +223,7 @@ class AroundCheckViewModel(
                 if (resultState.status == WifiConnectStatus.Connected) {
                     _isSequentialTesting.value = false
                     _sequentialTestMessage.value = "Berhasil tersambung ke ${candidate.ssid}!"
+                    sendSnackbar("Berhasil tersambung ke ${candidate.ssid}!")
                     return@launch
                 } else {
                     if (index + 1 < scanItems.size) {
@@ -217,6 +234,7 @@ class AroundCheckViewModel(
                         _isSequentialTesting.value = false
                         _currentCandidateIndex.value = -1
                         _sequentialTestMessage.value = "Semua Wi-Fi selesai diuji. Tidak ada yang berhasil tersambung."
+                        sendSnackbar("Semua Wi-Fi selesai diuji.")
                         return@launch
                     }
                 }
@@ -232,6 +250,7 @@ class AroundCheckViewModel(
         _isSequentialTesting.value = false
         _currentCandidateIndex.value = -1
         _sequentialTestMessage.value = "Pengujian dihentikan."
+        sendSnackbar("Pengujian sekuensial dihentikan")
     }
 
     override fun onCleared() {
