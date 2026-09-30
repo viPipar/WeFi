@@ -21,7 +21,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -57,6 +57,24 @@ class AroundCheckViewModel(
 
     private val _isPasswordVisible = MutableStateFlow(false)
     val isPasswordVisible: StateFlow<Boolean> = _isPasswordVisible.asStateFlow()
+
+    // State untuk Bar Input Password & Pengujian Sekuensial di Atas
+    private val _topPasswordInput = MutableStateFlow("")
+    val topPasswordInput: StateFlow<String> = _topPasswordInput.asStateFlow()
+
+    private val _isTopPasswordVisible = MutableStateFlow(false)
+    val isTopPasswordVisible: StateFlow<Boolean> = _isTopPasswordVisible.asStateFlow()
+
+    private val _isSequentialTesting = MutableStateFlow(false)
+    val isSequentialTesting: StateFlow<Boolean> = _isSequentialTesting.asStateFlow()
+
+    private val _currentCandidateIndex = MutableStateFlow(-1)
+    val currentCandidateIndex: StateFlow<Int> = _currentCandidateIndex.asStateFlow()
+
+    private val _sequentialTestMessage = MutableStateFlow("")
+    val sequentialTestMessage: StateFlow<String> = _sequentialTestMessage.asStateFlow()
+
+    private var sequentialTestJob: Job? = null
 
     init {
         // Pindai awal saat ViewModel pertama kali dibuat
@@ -140,8 +158,85 @@ class AroundCheckViewModel(
         return state.targetSsid == ssid && state.status == WifiConnectStatus.WaitingApproval
     }
 
+    fun setTopPasswordInput(input: String) {
+        _topPasswordInput.value = input
+    }
+
+    fun toggleTopPasswordVisibility() {
+        _isTopPasswordVisible.value = !_isTopPasswordVisible.value
+    }
+
+    fun startSequentialTest() {
+        if (_isSequentialTesting.value) return
+
+        val scanItems = when (val s = scanState.value) {
+            is WifiScanState.Success -> s.items
+            is WifiScanState.Throttled -> s.items
+            else -> emptyList()
+        }.filter { it.ssid.isNotBlank() }
+
+        if (scanItems.isEmpty()) {
+            _sequentialTestMessage.value = "Daftar Wi-Fi kosong. Silakan scan terlebih dahulu."
+            return
+        }
+
+        val password = _topPasswordInput.value
+        _isSequentialTesting.value = true
+        _currentCandidateIndex.value = 0
+        _sequentialTestMessage.value = "Memulai pengujian Wi-Fi..."
+
+        sequentialTestJob?.cancel()
+        sequentialTestJob = viewModelScope.launch(dispatcher) {
+            var index = 0
+            while (isActive && index < scanItems.size) {
+                _currentCandidateIndex.value = index
+                val candidate = scanItems[index]
+                _sequentialTestMessage.value = "Menguji Wi-Fi [${index + 1}/${scanItems.size}]: ${candidate.ssid}..."
+
+                connector.connect(candidate.ssid, password, candidate.security)
+
+                val resultState = connectState.first { state ->
+                    state.targetSsid == candidate.ssid && (
+                        state.status == WifiConnectStatus.Connected ||
+                        state.status == WifiConnectStatus.Rejected ||
+                        state.status == WifiConnectStatus.Failed ||
+                        state.status == WifiConnectStatus.Timeout
+                    )
+                }
+
+                if (resultState.status == WifiConnectStatus.Connected) {
+                    _isSequentialTesting.value = false
+                    _sequentialTestMessage.value = "Berhasil tersambung ke ${candidate.ssid}!"
+                    return@launch
+                } else {
+                    if (index + 1 < scanItems.size) {
+                        _sequentialTestMessage.value = "Gagal pada ${candidate.ssid}. Melanjutkan ke kandidat berikutnya..."
+                        delay(3000L)
+                        index++
+                    } else {
+                        _isSequentialTesting.value = false
+                        _currentCandidateIndex.value = -1
+                        _sequentialTestMessage.value = "Semua Wi-Fi selesai diuji. Tidak ada yang berhasil tersambung."
+                        return@launch
+                    }
+                }
+            }
+            _isSequentialTesting.value = false
+        }
+    }
+
+    fun cancelSequentialTest() {
+        sequentialTestJob?.cancel()
+        sequentialTestJob = null
+        connector.cancel()
+        _isSequentialTesting.value = false
+        _currentCandidateIndex.value = -1
+        _sequentialTestMessage.value = "Pengujian dihentikan."
+    }
+
     override fun onCleared() {
         super.onCleared()
+        sequentialTestJob?.cancel()
         scanner.teardown()
         connector.teardown()
     }

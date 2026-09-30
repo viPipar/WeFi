@@ -32,6 +32,7 @@ import androidx.compose.material.icons.rounded.HourglassBottom
 import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.LocationOff
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
@@ -104,6 +105,11 @@ fun AroundCheckScreen(
     val selectedItemForDialog by viewModel.selectedItemForPasswordDialog.collectAsState()
     val passwordInput by viewModel.passwordInput.collectAsState()
     val isPasswordVisible by viewModel.isPasswordVisible.collectAsState()
+    val topPasswordInput by viewModel.topPasswordInput.collectAsState()
+    val isTopPasswordVisible by viewModel.isTopPasswordVisible.collectAsState()
+    val isSequentialTesting by viewModel.isSequentialTesting.collectAsState()
+    val currentCandidateIndex by viewModel.currentCandidateIndex.collectAsState()
+    val sequentialTestMessage by viewModel.sequentialTestMessage.collectAsState()
     val auditLogs by viewModel.auditLogs.collectAsState()
     val showAuditSheet by viewModel.showAuditBottomSheet.collectAsState()
     var currentTickerSeconds by remember { mutableLongStateOf(System.currentTimeMillis() / 1000) }
@@ -236,7 +242,146 @@ fun AroundCheckScreen(
             .background(MaterialTheme.colorScheme.background)
             .padding(horizontal = 16.dp)
     ) {
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Bar Input Field & Tombol Search di Bagian Paling Atas
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = topPasswordInput,
+                onValueChange = { viewModel.setTopPasswordInput(it) },
+                modifier = Modifier.weight(1f),
+                label = { Text("Password Wi-Fi Lab", fontSize = 12.sp) },
+                placeholder = { Text("Masukkan passphrase...", fontSize = 12.sp) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Rounded.Key,
+                        contentDescription = null,
+                        tint = BlynkBlue,
+                        modifier = Modifier.size(20.dp)
+                    )
+                },
+                trailingIcon = {
+                    IconButton(onClick = { viewModel.toggleTopPasswordVisibility() }) {
+                        Icon(
+                            imageVector = if (isTopPasswordVisible) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff,
+                            contentDescription = "Toggle password visibility",
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                },
+                visualTransformation = if (isTopPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Password,
+                    imeAction = ImeAction.Search
+                ),
+                keyboardActions = KeyboardActions(onSearch = {
+                    if (!isSequentialTesting) viewModel.startSequentialTest()
+                }),
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = BlynkBlue,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                ),
+                enabled = !isSequentialTesting
+            )
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            if (isSequentialTesting) {
+                Button(
+                    onClick = { viewModel.cancelSequentialTest() },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = QualityRed),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 14.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Close,
+                        contentDescription = "Hentikan",
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Batal", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                }
+            } else {
+                Button(
+                    onClick = { viewModel.startSequentialTest() },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = BlynkBlue),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 14.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Search,
+                        contentDescription = "Cari",
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Cari", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                }
+            }
+        }
+
+        // Banner Status Pengujian Sekuensial
+        if (isSequentialTesting || sequentialTestMessage.isNotBlank()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                color = when {
+                    isSequentialTesting -> Color(0xFFEFF6FF)
+                    sequentialTestMessage.contains("Berhasil") -> Color(0xFFDCFCE7)
+                    else -> Color(0xFFF3F4F6)
+                },
+                border = BorderStroke(
+                    1.dp,
+                    when {
+                        isSequentialTesting -> BlynkBlue.copy(alpha = 0.3f)
+                        sequentialTestMessage.contains("Berhasil") -> QualityGreen.copy(alpha = 0.3f)
+                        else -> Color(0xFFE5E7EB)
+                    }
+                )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (isSequentialTesting) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            color = BlynkBlue,
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                    } else if (sequentialTestMessage.contains("Berhasil")) {
+                        Icon(
+                            imageVector = Icons.Rounded.CheckCircle,
+                            contentDescription = null,
+                            tint = QualityGreen,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                    }
+                    Text(
+                        text = sequentialTestMessage,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = when {
+                            isSequentialTesting -> BlynkBlueDark
+                            sequentialTestMessage.contains("Berhasil") -> Color(0xFF15803D)
+                            else -> MaterialTheme.colorScheme.onSurface
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
 
         // Header Toolbar
         Row(

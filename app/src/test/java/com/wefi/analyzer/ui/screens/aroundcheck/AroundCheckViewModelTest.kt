@@ -135,11 +135,115 @@ class AroundCheckViewModelTest {
         assertTrue(viewModel.isItemWaitingApproval("Lab-Wifi"))
         assertFalse(viewModel.isItemWaitingApproval("Other-Wifi"))
     }
+    @Test
+    fun setTopPasswordInput_updatesValue() {
+        viewModel.setTopPasswordInput("labpass123")
+        assertEquals("labpass123", viewModel.topPasswordInput.value)
+    }
+
+    @Test
+    fun toggleTopPasswordVisibility_togglesBoolean() {
+        assertFalse(viewModel.isTopPasswordVisible.value)
+        viewModel.toggleTopPasswordVisibility()
+        assertTrue(viewModel.isTopPasswordVisible.value)
+        viewModel.toggleTopPasswordVisibility()
+        assertFalse(viewModel.isTopPasswordVisible.value)
+    }
+
+    @Test
+    fun startSequentialTest_withEmptyCandidates_setsMessageAndDoesNotStart() = runTest(testDispatcher) {
+        fakeScanner.setScanItems(emptyList())
+        viewModel.setTopPasswordInput("pass123")
+        viewModel.startSequentialTest()
+        testScheduler.advanceUntilIdle()
+
+        assertFalse(viewModel.isSequentialTesting.value)
+        assertEquals("Daftar Wi-Fi kosong. Silakan scan terlebih dahulu.", viewModel.sequentialTestMessage.value)
+        assertNull(fakeConnector.lastConnectSsid)
+    }
+
+    @Test
+    fun startSequentialTest_initiatesConnectOnFirstCandidate() = runTest(testDispatcher) {
+        val candidate1 = WifiScanItem("Lab-AP-1", "00:11:22:33:44:01", -50, WifiSecurityType.WPA2, 2412, 1)
+        val candidate2 = WifiScanItem("Lab-AP-2", "00:11:22:33:44:02", -60, WifiSecurityType.WPA2, 2412, 1)
+        fakeScanner.setScanItems(listOf(candidate1, candidate2))
+
+        viewModel.setTopPasswordInput("labSecret")
+        viewModel.startSequentialTest()
+        testScheduler.advanceUntilIdle()
+
+        assertTrue(viewModel.isSequentialTesting.value)
+        assertEquals(0, viewModel.currentCandidateIndex.value)
+        assertEquals("Lab-AP-1", fakeConnector.lastConnectSsid)
+        assertEquals("labSecret", fakeConnector.lastConnectPassword)
+    }
+
+    @Test
+    fun startSequentialTest_whenCandidateSucceeds_stopsTestingWithSuccessMessage() = runTest(testDispatcher) {
+        val candidate1 = WifiScanItem("Lab-AP-1", "00:11:22:33:44:01", -50, WifiSecurityType.WPA2, 2412, 1)
+        fakeScanner.setScanItems(listOf(candidate1))
+
+        viewModel.setTopPasswordInput("labSecret")
+        viewModel.startSequentialTest()
+        testScheduler.advanceUntilIdle()
+
+        fakeConnector.emitConnectState(WifiConnectState(targetSsid = "Lab-AP-1", status = WifiConnectStatus.Connected))
+        testScheduler.advanceUntilIdle()
+
+        assertFalse(viewModel.isSequentialTesting.value)
+        assertTrue(viewModel.sequentialTestMessage.value.contains("Berhasil tersambung"))
+    }
+
+    @Test
+    fun startSequentialTest_whenFirstCandidateFails_advancesToSecondCandidateAfterCooldown() = runTest(testDispatcher) {
+        val candidate1 = WifiScanItem("Lab-AP-1", "00:11:22:33:44:01", -50, WifiSecurityType.WPA2, 2412, 1)
+        val candidate2 = WifiScanItem("Lab-AP-2", "00:11:22:33:44:02", -60, WifiSecurityType.WPA2, 2412, 1)
+        fakeScanner.setScanItems(listOf(candidate1, candidate2))
+
+        viewModel.setTopPasswordInput("labSecret")
+        viewModel.startSequentialTest()
+        testScheduler.advanceUntilIdle()
+
+        assertEquals(0, viewModel.currentCandidateIndex.value)
+        assertEquals("Lab-AP-1", fakeConnector.lastConnectSsid)
+
+        // Simulasikan user menolak atau kegagalan koneksi di AP 1
+        fakeConnector.emitConnectState(WifiConnectState(targetSsid = "Lab-AP-1", status = WifiConnectStatus.Rejected))
+        testScheduler.advanceUntilIdle()
+
+        // Harus berpindah ke AP 2
+        assertEquals(1, viewModel.currentCandidateIndex.value)
+        assertEquals("Lab-AP-2", fakeConnector.lastConnectSsid)
+        assertEquals("labSecret", fakeConnector.lastConnectPassword)
+        assertTrue(viewModel.isSequentialTesting.value)
+    }
+
+    @Test
+    fun cancelSequentialTest_stopsLoopAndCallsConnectorCancel() = runTest(testDispatcher) {
+        val candidate1 = WifiScanItem("Lab-AP-1", "00:11:22:33:44:01", -50, WifiSecurityType.WPA2, 2412, 1)
+        fakeScanner.setScanItems(listOf(candidate1))
+
+        viewModel.setTopPasswordInput("labSecret")
+        viewModel.startSequentialTest()
+        testScheduler.advanceUntilIdle()
+
+        assertTrue(viewModel.isSequentialTesting.value)
+        viewModel.cancelSequentialTest()
+        testScheduler.advanceUntilIdle()
+
+        assertFalse(viewModel.isSequentialTesting.value)
+        assertTrue(fakeConnector.cancelCalled)
+        assertEquals("Pengujian dihentikan.", viewModel.sequentialTestMessage.value)
+    }
 }
 
 private class FakeWifiScanner : WifiScanner {
     private val _scanState = MutableStateFlow<WifiScanState>(WifiScanState.Idle)
     override val scanState: StateFlow<WifiScanState> = _scanState.asStateFlow()
+
+    fun setScanItems(items: List<WifiScanItem>) {
+        _scanState.value = WifiScanState.Success(items)
+    }
 
     private val _lastScanTimestamp = MutableStateFlow(0L)
     override val lastScanTimestamp: StateFlow<Long> = _lastScanTimestamp.asStateFlow()
@@ -168,6 +272,10 @@ private class FakeWifiConnector : WifiConnector {
 
     fun setWaitingApproval(ssid: String) {
         _connectState.value = WifiConnectState(targetSsid = ssid, status = WifiConnectStatus.WaitingApproval)
+    }
+
+    fun emitConnectState(state: WifiConnectState) {
+        _connectState.value = state
     }
 
     override fun canConnect(ssid: String): ConnectCheckResult {
