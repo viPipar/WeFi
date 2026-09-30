@@ -56,7 +56,7 @@ class WifiScannerRepositoryImpl(
 
     private var isReceiverRegistered = false
     private var lastScanTriggerTime = 0L
-    private val MIN_SCAN_INTERVAL_MS = 6000L // 6 detik untuk auto-refresh berkala yang dinamis & aman dari throttle OS
+    private val MIN_SCAN_INTERVAL_MS = 20_000L // 20 detik (Golden Time: mematuhi batas 4 scan per 120s framework Android)
     private var periodicScanJob: Job? = null
 
     private val wifiScanReceiver = object : BroadcastReceiver() {
