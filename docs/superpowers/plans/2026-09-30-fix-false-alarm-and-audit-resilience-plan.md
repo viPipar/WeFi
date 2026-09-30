@@ -36,12 +36,12 @@
 - `VerifiedWifiStore`:
   - Prioritize `bssid` matching over `ssid`.
 
-- [ ] **Step 1: Write failing unit test for BSSID-first matching in VerifiedWifiStoreImplTest**
-- [ ] **Step 2: Run test to verify failure**
-- [ ] **Step 3: Update VerifiedWifiStoreImpl with BSSID-first matching logic**
-- [ ] **Step 4: Update WifiConnector interface with bssid and isCurrentlyConnectedTo**
-- [ ] **Step 5: Run tests and verify passing**
-- [ ] **Step 6: Commit changes**
+- [x] **Step 1: Write failing unit test for BSSID-first matching in VerifiedWifiStoreImplTest**
+- [x] **Step 2: Run test to verify failure**
+- [x] **Step 3: Update VerifiedWifiStoreImpl with BSSID-first matching logic**
+- [x] **Step 4: Update WifiConnector interface with bssid and isCurrentlyConnectedTo**
+- [x] **Step 5: Run tests and verify passing**
+- [x] **Step 6: Commit changes**
 
 ---
 
@@ -55,11 +55,11 @@
 - Consumes: `WifiConnector`, `ConnectivityManager`, `WifiManager`, `WifiNetworkSpecifier`
 - Produces: Hardened `connect()` with `MacAddress.fromString(bssid)` (when BSSID is valid), per-attempt `UUID` correlation token preventing stale IPC callbacks from triggering `Connected`, and `isCurrentlyConnectedTo()` implementation.
 
-- [ ] **Step 1: Write unit tests in WifiConnectorImplTest for stale callback rejection and BSSID specifier**
-- [ ] **Step 2: Run tests to verify failure**
-- [ ] **Step 3: Implement attemptId token check, MacAddress binding, and isCurrentlyConnectedTo in WifiConnectorImpl**
-- [ ] **Step 4: Run tests to verify passing**
-- [ ] **Step 5: Commit changes**
+- [x] **Step 1: Write unit tests in WifiConnectorImplTest for stale callback rejection and BSSID specifier**
+- [x] **Step 2: Run tests to verify failure**
+- [x] **Step 3: Implement attemptId token check, MacAddress binding, and isCurrentlyConnectedTo in WifiConnectorImpl**
+- [x] **Step 4: Run tests to verify passing**
+- [x] **Step 5: Commit changes**
 
 ---
 
@@ -77,11 +77,11 @@
   - Proper cooldown countdown wait in `startHybridTraversal()` instead of instant bypass.
   - Verification of genuine connection before accepting `candidatePassword`.
 
-- [ ] **Step 1: Write unit test in AroundCheckViewModelTest for Hybrid traversal cooldown handling and BSSID passing**
-- [ ] **Step 2: Run tests to verify failure**
-- [ ] **Step 3: Implement cooldown wait, BSSID passing, and pre-flight check in AroundCheckViewModel**
-- [ ] **Step 4: Run tests to verify passing**
-- [ ] **Step 5: Commit changes**
+- [x] **Step 1: Write unit test in AroundCheckViewModelTest for Hybrid traversal cooldown handling and BSSID passing**
+- [x] **Step 2: Run tests to verify failure**
+- [x] **Step 3: Implement cooldown wait, BSSID passing, and pre-flight check in AroundCheckViewModel**
+- [x] **Step 4: Run tests to verify passing**
+- [x] **Step 5: Commit changes**
 
 ---
 
@@ -92,7 +92,7 @@
 - Verify: APK build (`./gradlew assembleDebug`)
 - Remote: `git push origin main`
 
-- [ ] **Step 1: Run `./gradlew testDebugUnitTest` and ensure 100% green**
-- [ ] **Step 2: Run `./gradlew assembleDebug` and ensure successful APK assembly**
+- [x] **Step 1: Run `./gradlew testDebugUnitTest` and ensure 100% green**
+- [x] **Step 2: Run `./gradlew assembleDebug` and ensure successful APK assembly**
 - [ ] **Step 3: Commit and push to GitHub remote**
 - [ ] **Step 4: Verify CI/CD pipeline completion**
