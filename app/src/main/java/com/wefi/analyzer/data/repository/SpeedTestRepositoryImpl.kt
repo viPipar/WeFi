@@ -65,14 +65,14 @@ class SpeedTestRepositoryImpl(
             delay(60)
         }
 
-        val avgPing = if (pingSamples.isNotEmpty()) pingSamples.average() else 28.0
+        val avgPing = if (pingSamples.isNotEmpty()) pingSamples.average() else 0.0
         val jitter = if (pingSamples.size > 1) {
             var diffSum = 0.0
             for (i in 0 until pingSamples.size - 1) {
                 diffSum += abs(pingSamples[i] - pingSamples[i + 1])
             }
             diffSum / (pingSamples.size - 1)
-        } else 3.5
+        } else 0.0
 
         currentMetrics = currentMetrics.copy(
             pingMs = round(avgPing * 10) / 10,
@@ -125,10 +125,6 @@ class SpeedTestRepositoryImpl(
             }
         }
 
-        if (!downloadSuccess && downloadSpeedMbps <= 0.0) {
-            downloadSpeedMbps = 35.0
-        }
-
         currentMetrics = currentMetrics.copy(
             downloadMbps = downloadSpeedMbps,
             stage = SpeedTestStage.UPLOAD,
@@ -163,12 +159,8 @@ class SpeedTestRepositoryImpl(
                 }
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Upload test fallback engaged", e)
-            uploadSpeedMbps = round((downloadSpeedMbps * 0.45) * 10) / 10
-        }
-
-        if (uploadSpeedMbps <= 0.0) {
-            uploadSpeedMbps = round((downloadSpeedMbps * 0.40) * 10) / 10
+            Log.w(TAG, "Upload test failed: ${e.message}")
+            uploadSpeedMbps = 0.0
         }
 
         currentMetrics = currentMetrics.copy(

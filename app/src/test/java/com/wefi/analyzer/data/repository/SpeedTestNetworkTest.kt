@@ -31,4 +31,19 @@ class SpeedTestNetworkTest {
         assertFalse(finishedMetrics.isRunning)
         assertEquals(SpeedTestStage.FINISHED, finishedMetrics.stage)
     }
+
+    @Test
+    fun speedTestMetrics_onNetworkFailure_doesNotEmitFakeSpeeds() {
+        val failedMetrics = SpeedTestMetrics(
+            isRunning = false,
+            stage = SpeedTestStage.FINISHED,
+            downloadMbps = 0.0,
+            uploadMbps = 0.0,
+            pingMs = 0.0,
+            jitterMs = 0.0
+        )
+        assertEquals(0.0, failedMetrics.downloadMbps, 0.001)
+        assertEquals(0.0, failedMetrics.uploadMbps, 0.001)
+        assertEquals(0.0, failedMetrics.pingMs, 0.001)
+    }
 }
