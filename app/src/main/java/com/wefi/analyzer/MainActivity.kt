@@ -48,6 +48,7 @@ import com.wefi.analyzer.ui.screens.aroundcheck.AroundCheckViewModel
 import com.wefi.analyzer.data.repository.WifiScannerImpl
 import com.wefi.analyzer.data.repository.WifiConnectorImpl
 import com.wefi.analyzer.data.repository.WifiAuditLoggerImpl
+import com.wefi.analyzer.data.repository.VerifiedWifiStoreImpl
 import com.wefi.analyzer.ui.theme.WeFiTheme
 
 import com.wefi.analyzer.data.repository.DeviceHardwareRepositoryImpl
@@ -74,6 +75,7 @@ class MainActivity : ComponentActivity() {
             val wifiScanner = WifiScannerImpl(applicationContext)
             val auditLogger = WifiAuditLoggerImpl()
             val wifiConnector = WifiConnectorImpl(context = applicationContext, auditLogger = auditLogger)
+            val verifiedStore = VerifiedWifiStoreImpl(applicationContext)
 
             scannerRepository = scannerRepo
             connectionRepository = connectionRepo
@@ -84,7 +86,12 @@ class MainActivity : ComponentActivity() {
             val apListViewModel = ApListViewModel(scannerRepo)
             val channelRatingViewModel = ChannelRatingViewModel(scannerRepo)
             val speedTestViewModel = SpeedTestViewModel(runSpeedTestUseCase, connectionRepo)
-            val aroundCheckViewModel = AroundCheckViewModel(wifiScanner, wifiConnector, auditLogger)
+            val aroundCheckViewModel = AroundCheckViewModel(
+                scanner = wifiScanner,
+                connector = wifiConnector,
+                auditLogger = auditLogger,
+                verifiedStore = verifiedStore
+            )
 
             setContent {
                 WeFiTheme {
