@@ -144,6 +144,22 @@ class AroundCheckViewModel(
         scanner.refreshFromCache()
     }
 
+    fun triggerSmartRefresh() {
+        val cooldown = remainingScanCooldownSeconds.value
+        if (cooldown > 0) {
+            scanner.refreshFromCache()
+            sendSnackbar("Jeda Golden Time aktif (${cooldown}s). Menampilkan hasil pemindaian terbaru.")
+        } else {
+            val started = scanner.startScan()
+            if (started) {
+                sendSnackbar("Memulai pemindaian Wi-Fi aktif...")
+            } else {
+                scanner.refreshFromCache()
+                sendSnackbar("Sistem sedang sibuk. Menampilkan hasil pemindaian terbaru.")
+            }
+        }
+    }
+
     fun isLocationEnabled(): Boolean {
         return scanner.isLocationEnabled()
     }
@@ -507,8 +523,8 @@ class AroundCheckViewModel(
     override fun onCleared() {
         super.onCleared()
         traversalJob?.cancel()
-        scanner.teardown()
-        connector.teardown()
+        circuitBreakerDeferred?.complete(false)
+        circuitBreakerDeferred = null
     }
 
     companion object {

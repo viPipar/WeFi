@@ -409,6 +409,30 @@ class AroundCheckViewModelTest {
         // SANGAT PENTING: Dialog TIDAK boleh muncul lagi (tidak spam)!
         assertFalse("Circuit Breaker TIDAK boleh spam lagi setelah user menyetujui lanjutkan", viewModel.showCircuitBreakerDialog.value)
     }
+
+    @Test
+    fun triggerSmartRefresh_whenNoCooldown_triggersStartScan() = runTest(testDispatcher) {
+        fakeScanner.setCooldown(0)
+        fakeScanner.startScanCallCount = 0
+
+        viewModel.triggerSmartRefresh()
+
+        assertEquals(1, fakeScanner.startScanCallCount)
+        assertEquals(0, fakeScanner.refreshFromCacheCallCount)
+    }
+
+    @Test
+    fun triggerSmartRefresh_whenInCooldown_refreshesFromCacheAndNotifiesUser() = runTest(testDispatcher) {
+        fakeScanner.setCooldown(15)
+        fakeScanner.startScanCallCount = 0
+        fakeScanner.refreshFromCacheCallCount = 0
+
+        viewModel.triggerSmartRefresh()
+        testScheduler.advanceUntilIdle()
+
+        assertEquals(0, fakeScanner.startScanCallCount)
+        assertEquals(1, fakeScanner.refreshFromCacheCallCount)
+    }
 }
 
 
@@ -426,13 +450,28 @@ private class FakeWifiScanner : WifiScanner {
     private val _remainingScanCooldown = MutableStateFlow(0)
     override val remainingScanCooldownSeconds: StateFlow<Int> = _remainingScanCooldown.asStateFlow()
 
+    fun setCooldown(seconds: Int) {
+        _remainingScanCooldown.value = seconds
+    }
+
+    var startScanCallCount = 0
+    var refreshFromCacheCallCount = 0
+    var teardownCalled = false
+
     override val isThrottleEnabledOnDevice: Boolean = true
 
     override fun isLocationEnabled(): Boolean = true
-    override fun startScan(): Boolean = true
-    override fun refreshFromCache() {}
+    override fun startScan(): Boolean {
+        startScanCallCount++
+        return true
+    }
+    override fun refreshFromCache() {
+        refreshFromCacheCallCount++
+    }
     override fun toggleLabScanThrottle(enable: Boolean): Boolean = false
-    override fun teardown() {}
+    override fun teardown() {
+        teardownCalled = true
+    }
 }
 
 private class FakeWifiConnector : WifiConnector {

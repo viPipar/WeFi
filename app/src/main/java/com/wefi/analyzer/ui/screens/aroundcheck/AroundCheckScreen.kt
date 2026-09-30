@@ -1092,23 +1092,23 @@ fun AroundCheckScreen(
 
                     val isScanCoolingDown = remainingScanCooldown > 0
                     Button(
-                        onClick = { viewModel.startScan() },
-                        enabled = !isScanCoolingDown,
+                        onClick = { viewModel.triggerSmartRefresh() },
+                        enabled = true,
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = BlynkBlue,
-                            disabledContainerColor = BlynkBlue.copy(alpha = 0.4f)
+                            containerColor = if (isScanCoolingDown) MaterialTheme.colorScheme.surfaceVariant else BlynkBlue,
+                            contentColor = if (isScanCoolingDown) MaterialTheme.colorScheme.onSurfaceVariant else Color.White
                         ),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                     ) {
                         Icon(
                             imageVector = if (isScanCoolingDown) Icons.Rounded.HourglassBottom else Icons.Rounded.Refresh,
-                            contentDescription = "Scan",
+                            contentDescription = if (isScanCoolingDown) "Refresh Cache" else "Scan Wi-Fi",
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = if (isScanCoolingDown) "SCAN (${remainingScanCooldown}s)" else "SCAN",
+                            text = if (isScanCoolingDown) "REFRESH (${remainingScanCooldown}s)" else "SCAN",
                             fontWeight = FontWeight.Bold,
                             fontSize = 12.sp
                         )
