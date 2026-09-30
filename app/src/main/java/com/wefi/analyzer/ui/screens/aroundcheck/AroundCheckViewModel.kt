@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.wefi.analyzer.domain.model.AroundCheckMode
 import com.wefi.analyzer.domain.model.DfsParseResult
+import com.wefi.analyzer.domain.model.HybridRouterStatus
 import com.wefi.analyzer.domain.model.VerifiedLabRouter
 import com.wefi.analyzer.domain.model.WifiAuditLogEntry
 import com.wefi.analyzer.domain.model.WifiConnectState
@@ -92,6 +93,16 @@ class AroundCheckViewModel(
 
     private val _dfsParsedStats = MutableStateFlow(DfsParseResult(emptyList(), 0, 0))
     val dfsParsedStats: StateFlow<DfsParseResult> = _dfsParsedStats.asStateFlow()
+
+    // State Mode Hybrid (Banyak Password ke Banyak Router - DFS + BFS)
+    private val _hybridRouterStatuses = MutableStateFlow<Map<String, HybridRouterStatus>>(emptyMap())
+    val hybridRouterStatuses: StateFlow<Map<String, HybridRouterStatus>> = _hybridRouterStatuses.asStateFlow()
+
+    private val _hybridCsvInput = MutableStateFlow(DFS_PRACTICUM_TEMPLATE)
+    val hybridCsvInput: StateFlow<String> = _hybridCsvInput.asStateFlow()
+
+    private val _isHybridCsvVisible = MutableStateFlow(false)
+    val isHybridCsvVisible: StateFlow<Boolean> = _isHybridCsvVisible.asStateFlow()
 
     // Status Traversal Aktif (Terpadu untuk BFS & DFS)
     private val _isSequentialTesting = MutableStateFlow(false)
@@ -295,6 +306,21 @@ class AroundCheckViewModel(
     fun selectDfsTargetItem(item: WifiScanItem?) {
         if (_isSequentialTesting.value) return
         _dfsTargetItem.value = item
+    }
+
+    // --- Mode Hybrid Setters ---
+
+    fun setHybridCsvInput(input: String) {
+        _hybridCsvInput.value = input
+    }
+
+    fun applyHybridPracticumTemplate() {
+        setHybridCsvInput(DFS_PRACTICUM_TEMPLATE)
+        sendSnackbar("Template praktikum dimuat (56 kata sandi)")
+    }
+
+    fun toggleHybridCsvVisibility() {
+        _isHybridCsvVisible.value = !_isHybridCsvVisible.value
     }
 
     // --- Traversal BFS: 1 Password ke Banyak Router ---
@@ -514,6 +540,136 @@ class AroundCheckViewModel(
         }
     }
 
+    // --- Traversal Hybrid: Banyak Password ke Banyak Router (DFS + BFS) ---
+
+    fun startHybridTraversal() {
+        if (_isSequentialTesting.value) return
+
+        val scanItems = when (val s = scanState.value) {
+            is WifiScanState.Success -> s.items
+            is WifiScanState.Throttled -> s.items
+            else -> emptyList()
+        }.filter { it.ssid.isNotBlank() }
+
+        if (scanItems.isEmpty()) {
+            _sequentialTestMessage.value = "Daftar Wi-Fi kosong. Silakan scan terlebih dahulu."
+            scanner.startScan()
+            sendSnackbar("Daftar Wi-Fi kosong. Memulai scan otomatis...")
+            return
+        }
+
+        val parseResult = DfsPasswordSanitizer.parse(_hybridCsvInput.value)
+        val validPasswords = parseResult.validPasswords
+        if (validPasswords.isEmpty() && scanItems.none { it.security == WifiSecurityType.OPEN }) {
+            _sequentialTestMessage.value = "Daftar password valid kosong. Masukkan minimal 1 password (min 8 karakter)."
+            sendSnackbar("Daftar password CSV belum memiliki kata sandi yang valid.")
+            return
+        }
+
+        _isSequentialTesting.value = true
+        _currentCandidateIndex.value = 0
+        _traversalTotalCount.value = scanItems.size
+        _sequentialTestMessage.value = "Memulai Traversal Hybrid (DFS + BFS)..."
+        _isControlPanelExpanded.value = false
+
+        traversalJob?.cancel()
+        traversalJob = viewModelScope.launch(dispatcher) {
+            for (routerIndex in scanItems.indices) {
+                if (!isActive) break
+                _currentCandidateIndex.value = routerIndex
+                val router = scanItems[routerIndex]
+                val routerKey = router.bssid.ifBlank { router.ssid }
+
+                // 1. Cek apakah router sudah ada di Vault Terverifikasi
+                val isAlreadyVerified = verifiedStore?.isRouterVerified(router.bssid, router.ssid) ?: false
+                if (isAlreadyVerified) {
+                    val verifiedPwd = verifiedStore?.getVerifiedPassword(router.bssid, router.ssid) ?: ""
+                    _hybridRouterStatuses.value = _hybridRouterStatuses.value + (routerKey to HybridRouterStatus.VerifiedFromVault(verifiedPwd))
+                    _sequentialTestMessage.value = "Hybrid [${routerIndex + 1}/${scanItems.size}]: ${router.ssid} sudah terverifikasi di Vault."
+                    delay(300L)
+                    continue
+                }
+
+                // 2. Jika router berkeamanan OPEN
+                if (router.security == WifiSecurityType.OPEN) {
+                    _hybridRouterStatuses.value = _hybridRouterStatuses.value + (routerKey to HybridRouterStatus.Found(""))
+                    _sequentialTestMessage.value = "Hybrid [${routerIndex + 1}/${scanItems.size}]: ${router.ssid} adalah jaringan OPEN."
+                    delay(300L)
+                    continue
+                }
+
+                // 3. Uji DFS pada router ini
+                var foundPassword: String? = null
+                for (passIndex in validPasswords.indices) {
+                    if (!isActive) break
+                    val candidatePassword = validPasswords[passIndex]
+
+                    // Update status live Testing
+                    _hybridRouterStatuses.value = _hybridRouterStatuses.value + (routerKey to HybridRouterStatus.Testing(passIndex + 1, validPasswords.size))
+
+                    // Proteksi Pacing Hardware: Jeda aman 2s antar percobaan pada router yang sama
+                    if (passIndex > 0) {
+                        for (sec in 2 downTo 1) {
+                            if (!isActive) break
+                            _sequentialTestMessage.value = "Jeda aman (${sec}s) sebelum password [${passIndex + 1}/${validPasswords.size}] di ${router.ssid}..."
+                            delay(1000L)
+                        }
+                    }
+                    if (!isActive) break
+
+                    // Quench delay
+                    connector.cancel()
+                    delay(500L)
+
+                    _sequentialTestMessage.value = "Hybrid [${routerIndex + 1}/${scanItems.size}]: Menguji '${maskPassword(candidatePassword)}' pada ${router.ssid}..."
+                    connector.connect(router.ssid, candidatePassword, router.security)
+
+                    val resultState = connectState.first { state ->
+                        state.targetSsid == router.ssid && (
+                            state.status == WifiConnectStatus.Connected ||
+                            state.status == WifiConnectStatus.Rejected ||
+                            state.status == WifiConnectStatus.Failed ||
+                            state.status == WifiConnectStatus.Timeout ||
+                            state.status is WifiConnectStatus.Cooldown
+                        )
+                    }
+
+                    if (resultState.status == WifiConnectStatus.Connected) {
+                        foundPassword = candidatePassword
+                        val verified = VerifiedLabRouter(
+                            bssid = router.bssid,
+                            ssid = router.ssid,
+                            workingPassword = candidatePassword,
+                            discoveredTimestamp = System.currentTimeMillis(),
+                            securityType = router.security
+                        )
+                        verifiedStore?.saveVerifiedRouter(verified)
+                        _goalFoundRouter.value = verified
+                        _hybridRouterStatuses.value = _hybridRouterStatuses.value + (routerKey to HybridRouterStatus.Found(candidatePassword))
+                        _sequentialTestMessage.value = "Goal Hybrid Ditemukan! Password untuk ${router.ssid}: $candidatePassword"
+                        sendSnackbar("Password ditemukan untuk ${router.ssid}!")
+                        break // LANGSUNG BREAK loop passphrase -> Lanjut ke Router berikutnya!
+                    }
+                }
+
+                // Jika seluruh passphrase selesai diuji dan tidak ada yang berhasil
+                if (foundPassword == null && isActive) {
+                    _hybridRouterStatuses.value = _hybridRouterStatuses.value + (routerKey to HybridRouterStatus.NotFound(validPasswords.size))
+                }
+
+                // Pacing delay antar router (2 detik)
+                if (routerIndex + 1 < scanItems.size && isActive) {
+                    delay(2000L)
+                }
+            }
+
+            _isSequentialTesting.value = false
+            _currentCandidateIndex.value = -1
+            _sequentialTestMessage.value = "Traversal Hybrid selesai."
+            sendSnackbar("Traversal Hybrid selesai.")
+        }
+    }
+
     private fun maskPassword(password: String): String {
         return if (password.length <= 4) "****" else password.take(2) + "***" + password.takeLast(2)
     }
@@ -526,6 +682,20 @@ class AroundCheckViewModel(
         connector.cancel()
         _isSequentialTesting.value = false
         _currentCandidateIndex.value = -1
+
+        // Reset router yang sedang berstatus Testing kembali ke Idle
+        val currentStatuses = _hybridRouterStatuses.value.toMutableMap()
+        var changed = false
+        for ((key, status) in currentStatuses) {
+            if (status is HybridRouterStatus.Testing) {
+                currentStatuses[key] = HybridRouterStatus.Idle
+                changed = true
+            }
+        }
+        if (changed) {
+            _hybridRouterStatuses.value = currentStatuses
+        }
+
         _sequentialTestMessage.value = "Pengujian dihentikan."
         sendSnackbar("Pengujian dihentikan")
     }

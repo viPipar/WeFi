@@ -1,6 +1,7 @@
 package com.wefi.analyzer.ui.screens.aroundcheck
 
 import com.wefi.analyzer.domain.model.AroundCheckMode
+import com.wefi.analyzer.domain.model.HybridRouterStatus
 import com.wefi.analyzer.domain.model.VerifiedLabRouter
 import com.wefi.analyzer.domain.model.WifiAuditLogEntry
 import com.wefi.analyzer.domain.model.WifiAuditResult
@@ -451,6 +452,106 @@ class AroundCheckViewModelTest {
         viewModel.startBfsTraversal()
         // Saat traversal dimulai, panel harus otomatis collapse agar list router mendapatkan ruang pandang maksimal
         assertFalse(viewModel.isControlPanelExpanded.value)
+    }
+
+    @Test
+    fun startHybridTraversal_findsPasswordOnFirstRouter_andProceedsToSecondRouter() = runTest(testDispatcher) {
+        val routerA = WifiScanItem("Router-A", "11:22:33:44:55:01", -50, WifiSecurityType.WPA2, 2412, 1)
+        val routerB = WifiScanItem("Router-B", "11:22:33:44:55:02", -60, WifiSecurityType.WPA2, 2412, 1)
+        fakeScanner.setScanItems(listOf(routerA, routerB))
+        viewModel.setHybridCsvInput("wrongPass1;secretMatch;extraPass3")
+
+        viewModel.startHybridTraversal()
+        testScheduler.advanceUntilIdle()
+
+        // Router-A, Passphrase 1 gagal
+        fakeConnector.emitConnectState(WifiConnectState(targetSsid = "Router-A", status = WifiConnectStatus.Rejected))
+        testScheduler.advanceTimeBy(3500L)
+        testScheduler.runCurrent()
+
+        // Router-A, Passphrase 2 berhasil
+        fakeConnector.emitConnectState(WifiConnectState(targetSsid = "Router-A", status = WifiConnectStatus.Connected))
+        testScheduler.advanceTimeBy(3000L)
+        testScheduler.runCurrent()
+
+        // Verifikasi Router-A berstatus Found dan tersimpan ke vault
+        val statusA = viewModel.hybridRouterStatuses.value["11:22:33:44:55:01"]
+        assertTrue("Status Router-A harus Found", statusA is HybridRouterStatus.Found)
+        assertEquals("secretMatch", (statusA as HybridRouterStatus.Found).workingPassword)
+        assertTrue(fakeVerifiedStore.isRouterVerified("11:22:33:44:55:01", "Router-A"))
+
+        // Dan traversal otomatis lanjut ke Router-B (tidak lanjut menguji extraPass3 pada Router-A)
+        val statusB = viewModel.hybridRouterStatuses.value["11:22:33:44:55:02"]
+        assertTrue(statusB is HybridRouterStatus.Testing || statusB is HybridRouterStatus.Idle)
+    }
+
+    @Test
+    fun startHybridTraversal_whenAllPasswordsFail_setsNotFoundBadge_andProceedsToNextRouter() = runTest(testDispatcher) {
+        val routerA = WifiScanItem("Router-A", "11:22:33:44:55:01", -50, WifiSecurityType.WPA2, 2412, 1)
+        val routerB = WifiScanItem("Router-B", "11:22:33:44:55:02", -60, WifiSecurityType.WPA2, 2412, 1)
+        fakeScanner.setScanItems(listOf(routerA, routerB))
+        viewModel.setHybridCsvInput("passOne11;passTwo22")
+
+        viewModel.startHybridTraversal()
+        testScheduler.advanceUntilIdle()
+
+        // Router-A pass 1 gagal
+        fakeConnector.emitConnectState(WifiConnectState(targetSsid = "Router-A", status = WifiConnectStatus.Rejected))
+        testScheduler.advanceTimeBy(3500L)
+        testScheduler.runCurrent()
+
+        // Router-A pass 2 gagal
+        fakeConnector.emitConnectState(WifiConnectState(targetSsid = "Router-A", status = WifiConnectStatus.Rejected))
+        testScheduler.advanceTimeBy(3500L)
+        testScheduler.runCurrent()
+
+        // Status Router-A harus NotFound(2)
+        val statusA = viewModel.hybridRouterStatuses.value["11:22:33:44:55:01"]
+        assertTrue("Status Router-A harus NotFound setelah semua password gagal", statusA is HybridRouterStatus.NotFound)
+        assertEquals(2, (statusA as HybridRouterStatus.NotFound).testedCount)
+    }
+
+    @Test
+    fun startHybridTraversal_skipsAlreadyVerifiedVaultRouters() = runTest(testDispatcher) {
+        val routerA = WifiScanItem("Router-A", "11:22:33:44:55:01", -50, WifiSecurityType.WPA2, 2412, 1)
+        val routerB = WifiScanItem("Router-B", "11:22:33:44:55:02", -60, WifiSecurityType.WPA2, 2412, 1)
+        fakeScanner.setScanItems(listOf(routerA, routerB))
+        fakeVerifiedStore.saveVerifiedRouter(
+            VerifiedLabRouter("11:22:33:44:55:01", "Router-A", "vaultPassword123", System.currentTimeMillis(), WifiSecurityType.WPA2)
+        )
+        viewModel.setHybridCsvInput("passOne11;passTwo22")
+
+        viewModel.startHybridTraversal()
+        testScheduler.advanceUntilIdle()
+
+        // Router-A harus langsung ditandai VerifiedFromVault
+        val statusA = viewModel.hybridRouterStatuses.value["11:22:33:44:55:01"]
+        assertTrue("Router yang ada di vault harus berstatus VerifiedFromVault", statusA is HybridRouterStatus.VerifiedFromVault)
+        assertEquals("vaultPassword123", (statusA as HybridRouterStatus.VerifiedFromVault).workingPassword)
+
+        // Pastikan koneksi tidak pernah mencoba menghubungkan password test ke Router-A
+        assertTrue(fakeConnector.lastConnectSsid != "Router-A" || fakeConnector.lastConnectPassword != "passOne11")
+    }
+
+    @Test
+    fun cancelTraversal_haltsHybridTraversalImmediately_andResetsTestingRouterToIdle() = runTest(testDispatcher) {
+        val routerA = WifiScanItem("Router-A", "11:22:33:44:55:01", -50, WifiSecurityType.WPA2, 2412, 1)
+        fakeScanner.setScanItems(listOf(routerA))
+        viewModel.setHybridCsvInput("passOne11;passTwo22")
+
+        viewModel.startHybridTraversal()
+        testScheduler.advanceUntilIdle()
+
+        // Status awal Router-A sedang Testing
+        assertTrue(viewModel.isSequentialTesting.value)
+
+        viewModel.cancelTraversal()
+        testScheduler.advanceUntilIdle()
+
+        assertFalse(viewModel.isSequentialTesting.value)
+        val statusA = viewModel.hybridRouterStatuses.value["11:22:33:44:55:01"]
+        assertEquals(HybridRouterStatus.Idle, statusA)
+        assertTrue(fakeConnector.cancelCalled)
     }
 }
 
