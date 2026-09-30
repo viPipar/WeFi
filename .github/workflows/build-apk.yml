@@ -3,6 +3,7 @@ name: Build weFi APK
 on:
   push:
     branches: [ "main" ]
+    tags: [ "v*" ]
   workflow_dispatch:
 
 permissions:
@@ -63,22 +64,21 @@ jobs:
     - name: Publish GitHub Release with APK
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: v1.0.0
-        name: "weFi v1.0.0 (Release Build)"
+        tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'v1.1.0' }}
+        name: "weFi ${{ github.ref_type == 'tag' && github.ref_name || 'v1.1.0' }} - Hybrid Traversal & Lab Offline (Release Build)"
         body: |
-          ## weFi - Mobile Wi-Fi Analyzer 📶
+          ## weFi - Mobile Wi-Fi Spectrum Analyzer & Network Telemetry 📶
           Unduh dan pasang berkas APK di bawah ini ke smartphone Android Anda untuk memulai pengujian spektrum dan estimasi jarak!
 
           ### 📦 File Unduhan:
           - Klik **`app-debug.apk`** di bagian *Assets* di bawah untuk mengunduh langsung ke HP.
 
-          ### 🚀 Fitur Unggulan:
-          - **Grafik Spektrum Parabola (2.4, 5.0, 6.0 GHz)**
-          - **Garis Vertikal Penanda AP Terhubung (Connected Plumb-Line)**
-          - **Estimasi Jarak Matematika (Log-Distance Path Loss)**
-          - **Speedtest Throughput & Latensi Aktif**
-          - **Juicy Morphing Floating Help Assistant**
-          - **Desain Blynk.io Style Putih-Biru (#77ADF9)**
+          ### 🚀 Fitur Unggulan & Pembaruan v1.1.0:
+          - **Mode Hybrid (DFS + BFS):** Otomatisasi pengujian multi-router dengan 56 modul passphrase lab IPB dan auto-jump ke router berikutnya jika sandi ditemukan.
+          - **Lab Passphrase Vault:** Penyimpanan permanen sandi router yang berhasil diverifikasi dan skip otomatis router yang sudah tersimpan.
+          - **100% Offline Resilience:** Pengoperasian lokal 802.11 tanpa memerlukan koneksi WAN internet, dengan deteksi cerdas Mode Lab Offline pada SpeedTest.
+          - **Penyempurnaan UI/UX Blynk.io:** Indikator visual real-time status router (Sedang Diuji, Ditemukan, 56 Passphrase Tidak Cocok, Tersimpan di Vault).
+          - **Perbaikan Stabilitas & Throttling:** Pematuhan Golden Time Android Wi-Fi HAL dan eliminasi bug dialog berulang.
         draft: false
         prerelease: false
         files: app/build/outputs/apk/debug/app-debug.apk
