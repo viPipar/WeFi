@@ -235,6 +235,47 @@ class AroundCheckViewModelTest {
         assertTrue(fakeConnector.cancelCalled)
         assertEquals("Pengujian dihentikan.", viewModel.sequentialTestMessage.value)
     }
+
+    @Test
+    fun startSequentialTest_whenCooldownActive_waitsAndRecoversWithoutDeadlock() = runTest(testDispatcher) {
+        val candidate1 = WifiScanItem("Lab-AP-1", "00:11:22:33:44:01", -50, WifiSecurityType.WPA2, 2412, 1)
+        val candidate2 = WifiScanItem("Lab-AP-2", "00:11:22:33:44:02", -60, WifiSecurityType.WPA2, 2412, 1)
+        fakeScanner.setScanItems(listOf(candidate1, candidate2))
+
+        viewModel.setTopPasswordInput("labSecret")
+        viewModel.startSequentialTest()
+        testScheduler.advanceUntilIdle()
+
+        // Emulasikan kegagalan kandidat 1
+        fakeConnector.emitConnectState(WifiConnectState(targetSsid = "Lab-AP-1", status = WifiConnectStatus.Failed, message = "Ditolak"))
+        testScheduler.advanceUntilIdle()
+
+        // Harus melanjutkan ke AP 2 tanpa menggantung di Cooldown
+        assertEquals(1, viewModel.currentCandidateIndex.value)
+        assertEquals("Lab-AP-2", fakeConnector.lastConnectSsid)
+    }
+
+    @Test
+    fun startSequentialTest_whenConnectorEmitsCooldown_handlesWithoutHanging() = runTest(testDispatcher) {
+        val candidate1 = WifiScanItem("Lab-AP-1", "00:11:22:33:44:01", -50, WifiSecurityType.WPA2, 2412, 1)
+        fakeScanner.setScanItems(listOf(candidate1))
+
+        viewModel.setTopPasswordInput("labSecret")
+        viewModel.startSequentialTest()
+        testScheduler.advanceUntilIdle()
+
+        // Emulasikan connector mengembalikan Cooldown(2)
+        fakeConnector.emitConnectState(WifiConnectState(targetSsid = "Lab-AP-1", status = WifiConnectStatus.Cooldown(2)))
+        testScheduler.advanceTimeBy(3000L)
+        testScheduler.advanceUntilIdle()
+
+        // Kemudian emulasikan berhasil
+        fakeConnector.emitConnectState(WifiConnectState(targetSsid = "Lab-AP-1", status = WifiConnectStatus.Connected))
+        testScheduler.advanceUntilIdle()
+
+        assertFalse(viewModel.isSequentialTesting.value)
+        assertTrue(viewModel.sequentialTestMessage.value.contains("Berhasil tersambung"))
+    }
 }
 
 private class FakeWifiScanner : WifiScanner {

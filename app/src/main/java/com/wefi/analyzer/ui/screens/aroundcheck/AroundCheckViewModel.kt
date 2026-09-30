@@ -207,8 +207,19 @@ class AroundCheckViewModel(
             while (isActive && index < scanItems.size) {
                 _currentCandidateIndex.value = index
                 val candidate = scanItems[index]
-                _sequentialTestMessage.value = "Menguji Wi-Fi [${index + 1}/${scanItems.size}]: ${candidate.ssid}..."
 
+                // Periksa apakah candidate ini masih dalam masa cooldown throttler
+                val waitSec = connector.remainingCooldownSeconds(candidate.ssid)
+                if (waitSec > 0) {
+                    for (sec in waitSec downTo 1) {
+                        if (!isActive) break
+                        _sequentialTestMessage.value = "Jeda aman router (${sec}s) sebelum ${candidate.ssid}..."
+                        delay(1000L)
+                    }
+                }
+                if (!isActive) break
+
+                _sequentialTestMessage.value = "Menguji Wi-Fi [${index + 1}/${scanItems.size}]: ${candidate.ssid}..."
                 connector.connect(candidate.ssid, password, candidate.security)
 
                 val resultState = connectState.first { state ->
@@ -216,7 +227,8 @@ class AroundCheckViewModel(
                         state.status == WifiConnectStatus.Connected ||
                         state.status == WifiConnectStatus.Rejected ||
                         state.status == WifiConnectStatus.Failed ||
-                        state.status == WifiConnectStatus.Timeout
+                        state.status == WifiConnectStatus.Timeout ||
+                        state.status is WifiConnectStatus.Cooldown
                     )
                 }
 
@@ -225,10 +237,20 @@ class AroundCheckViewModel(
                     _sequentialTestMessage.value = "Berhasil tersambung ke ${candidate.ssid}!"
                     sendSnackbar("Berhasil tersambung ke ${candidate.ssid}!")
                     return@launch
+                } else if (resultState.status is WifiConnectStatus.Cooldown) {
+                    val remaining = (resultState.status as WifiConnectStatus.Cooldown).remainingSeconds
+                    for (sec in remaining downTo 1) {
+                        if (!isActive) break
+                        _sequentialTestMessage.value = "Cooldown router: menunggu ${sec}s..."
+                        delay(1000L)
+                    }
+                    // Ulangi percobaan pada kandidat ini setelah cooldown
+                    continue
                 } else {
                     if (index + 1 < scanItems.size) {
-                        _sequentialTestMessage.value = "Gagal pada ${candidate.ssid}. Melanjutkan ke kandidat berikutnya..."
-                        delay(3000L)
+                        val nextCandidate = scanItems[index + 1]
+                        _sequentialTestMessage.value = "Gagal pada ${candidate.ssid}. Melanjutkan ke ${nextCandidate.ssid}..."
+                        delay(1500L)
                         index++
                     } else {
                         _isSequentialTesting.value = false
