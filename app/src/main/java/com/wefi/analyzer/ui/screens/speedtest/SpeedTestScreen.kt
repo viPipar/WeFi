@@ -1,6 +1,7 @@
 package com.wefi.analyzer.ui.screens.speedtest
 
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.NetworkCheck
 import androidx.compose.material.icons.rounded.SignalCellularAlt
 import androidx.compose.material.icons.rounded.Speed
@@ -48,6 +50,7 @@ import com.wefi.analyzer.domain.model.SpeedTestStage
 import com.wefi.analyzer.ui.components.BlynkCard
 import com.wefi.analyzer.ui.components.BlynkMetricTile
 import com.wefi.analyzer.ui.theme.BlynkBlue
+import com.wefi.analyzer.ui.theme.BlynkBlueDark
 import com.wefi.analyzer.ui.theme.BlynkBlueTint
 import com.wefi.analyzer.ui.theme.QualityAmber
 import com.wefi.analyzer.ui.theme.QualityGreen
@@ -239,6 +242,43 @@ fun SpeedTestScreen(
                                 color = BlynkBlue,
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                             )
+                        }
+                    }
+                }
+
+                if (metrics.stage == SpeedTestStage.OFFLINE_LAB_MODE) {
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = BlynkBlueTint,
+                        border = BorderStroke(1.dp, BlynkBlue.copy(alpha = 0.3f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Info,
+                                contentDescription = null,
+                                tint = BlynkBlue,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = "Mode Lab Offline Terdeteksi",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = BlynkBlueDark
+                                )
+                                Text(
+                                    text = "Jaringan lokal lab tanpa akses WAN internet. Pemindaian sinyal dan Around Check tetap 100% aktif.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontSize = 10.5.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     }
                 }

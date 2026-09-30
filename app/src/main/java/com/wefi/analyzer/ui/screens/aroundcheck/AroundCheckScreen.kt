@@ -42,6 +42,9 @@ import androidx.compose.material.icons.rounded.LocationOff
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Hub
+import androidx.compose.material.icons.automirrored.rounded.PlaylistAddCheck
+import androidx.compose.material.icons.rounded.RemoveCircleOutline
 import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
@@ -92,7 +95,10 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.wefi.analyzer.domain.model.AroundCheckMode
+import com.wefi.analyzer.domain.model.DfsParseResult
+import com.wefi.analyzer.domain.model.HybridRouterStatus
 import com.wefi.analyzer.domain.model.VerifiedLabRouter
+import com.wefi.analyzer.domain.util.DfsPasswordSanitizer
 import com.wefi.analyzer.domain.model.WifiAuditLogEntry
 import com.wefi.analyzer.domain.model.WifiAuditResult
 import com.wefi.analyzer.domain.model.WifiConnectStatus
@@ -133,12 +139,15 @@ fun AroundCheckScreen(
     val auditLogs by viewModel.auditLogs.collectAsState()
     val showAuditSheet by viewModel.showAuditBottomSheet.collectAsState()
 
-    // BFS & DFS Traversal States
+    // BFS, DFS & Hybrid Traversal States
     val selectedMode by viewModel.selectedMode.collectAsState()
     val dfsCsvInput by viewModel.dfsCsvInput.collectAsState()
     val isDfsCsvVisible by viewModel.isDfsCsvVisible.collectAsState()
     val dfsTargetItem by viewModel.dfsTargetItem.collectAsState()
     val dfsParsedStats by viewModel.dfsParsedStats.collectAsState()
+    val hybridRouterStatuses by viewModel.hybridRouterStatuses.collectAsState()
+    val hybridCsvInput by viewModel.hybridCsvInput.collectAsState()
+    val isHybridCsvVisible by viewModel.isHybridCsvVisible.collectAsState()
     val traversalTotalCount by viewModel.traversalTotalCount.collectAsState()
     val goalFoundRouter by viewModel.goalFoundRouter.collectAsState()
     val showCircuitBreakerDialog by viewModel.showCircuitBreakerDialog.collectAsState()
@@ -148,6 +157,14 @@ fun AroundCheckScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val keyboardController = LocalSoftwareKeyboardController.current
     val clipboardManager = LocalClipboardManager.current
+
+    val scanItems = remember(scanState) {
+        when (val s = scanState) {
+            is WifiScanState.Success -> s.items
+            is WifiScanState.Throttled -> s.items
+            else -> emptyList()
+        }.filter { it.ssid.isNotBlank() }
+    }
 
     LaunchedEffect(Unit) {
         viewModel.snackbarEvent.collect { message ->
@@ -398,13 +415,25 @@ fun AroundCheckScreen(
                             Spacer(modifier = Modifier.width(6.dp))
                             Surface(
                                 shape = RoundedCornerShape(6.dp),
-                                color = if (selectedMode == AroundCheckMode.BFS) BlynkBlueTint else Color(0xFFFEF3C7)
+                                color = when (selectedMode) {
+                                    AroundCheckMode.BFS -> BlynkBlueTint
+                                    AroundCheckMode.DFS -> Color(0xFFFEF3C7)
+                                    AroundCheckMode.HYBRID -> Color(0xFFE0E7FF)
+                                }
                             ) {
                                 Text(
-                                    text = if (selectedMode == AroundCheckMode.BFS) "MODE BFS" else "MODE DFS",
+                                    text = when (selectedMode) {
+                                        AroundCheckMode.BFS -> "MODE BFS"
+                                        AroundCheckMode.DFS -> "MODE DFS"
+                                        AroundCheckMode.HYBRID -> "MODE HYBRID"
+                                    },
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = if (selectedMode == AroundCheckMode.BFS) BlynkBlueDark else Color(0xFF92400E),
+                                    color = when (selectedMode) {
+                                        AroundCheckMode.BFS -> BlynkBlueDark
+                                        AroundCheckMode.DFS -> Color(0xFF92400E)
+                                        AroundCheckMode.HYBRID -> Color(0xFF3730A3)
+                                    },
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                 )
                             }
@@ -427,7 +456,11 @@ fun AroundCheckScreen(
                                         )
                                         Spacer(modifier = Modifier.width(4.dp))
                                         Text(
-                                            text = if (selectedMode == AroundCheckMode.BFS) "BFS AKTIF" else "DFS AKTIF",
+                                            text = when (selectedMode) {
+                                                AroundCheckMode.BFS -> "BFS AKTIF"
+                                                AroundCheckMode.DFS -> "DFS AKTIF"
+                                                AroundCheckMode.HYBRID -> "HYBRID AKTIF"
+                                            },
                                             fontSize = 9.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = Color(0xFF92400E)
@@ -468,57 +501,89 @@ fun AroundCheckScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                if (selectedMode == AroundCheckMode.BFS) {
-                                    Text(
-                                        text = if (topPasswordInput.isBlank()) "Password BFS belum diatur" else "Passphrase: •••••••• (${topPasswordInput.length} kar)",
-                                        fontSize = 11.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    if (isSequentialTesting) {
-                                        Button(
-                                            onClick = { viewModel.cancelTraversal() },
-                                            shape = RoundedCornerShape(8.dp),
-                                            colors = ButtonDefaults.buttonColors(containerColor = QualityRed),
-                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)
-                                        ) {
-                                            Text("Batal", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                        }
-                                    } else {
-                                        Button(
-                                            onClick = { viewModel.startBfsTraversal() },
-                                            shape = RoundedCornerShape(8.dp),
-                                            colors = ButtonDefaults.buttonColors(containerColor = BlynkBlue),
-                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)
-                                        ) {
-                                            Text("Cari BFS", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                when (selectedMode) {
+                                    AroundCheckMode.BFS -> {
+                                        Text(
+                                            text = if (topPasswordInput.isBlank()) "Password BFS belum diatur" else "Passphrase: •••••••• (${topPasswordInput.length} kar)",
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        if (isSequentialTesting) {
+                                            Button(
+                                                onClick = { viewModel.cancelTraversal() },
+                                                shape = RoundedCornerShape(8.dp),
+                                                colors = ButtonDefaults.buttonColors(containerColor = QualityRed),
+                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)
+                                            ) {
+                                                Text("Batal", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                        } else {
+                                            Button(
+                                                onClick = { viewModel.startBfsTraversal() },
+                                                shape = RoundedCornerShape(8.dp),
+                                                colors = ButtonDefaults.buttonColors(containerColor = BlynkBlue),
+                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)
+                                            ) {
+                                                Text("Cari BFS", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                            }
                                         }
                                     }
-                                } else {
-                                    Text(
-                                        text = if (dfsTargetItem == null) "Pilih target di list bawah" else "${dfsTargetItem?.ssid} (${dfsParsedStats.validPasswords.size} pwd)",
-                                        fontSize = 11.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    if (isSequentialTesting) {
-                                        Button(
-                                            onClick = { viewModel.cancelTraversal() },
-                                            shape = RoundedCornerShape(8.dp),
-                                            colors = ButtonDefaults.buttonColors(containerColor = QualityRed),
-                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)
-                                        ) {
-                                            Text("Batal", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    AroundCheckMode.DFS -> {
+                                        Text(
+                                            text = if (dfsTargetItem == null) "Pilih target di list bawah" else "${dfsTargetItem?.ssid} (${dfsParsedStats.validPasswords.size} pwd)",
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        if (isSequentialTesting) {
+                                            Button(
+                                                onClick = { viewModel.cancelTraversal() },
+                                                shape = RoundedCornerShape(8.dp),
+                                                colors = ButtonDefaults.buttonColors(containerColor = QualityRed),
+                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)
+                                            ) {
+                                                Text("Batal", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                        } else {
+                                            Button(
+                                                onClick = { viewModel.startDfsTraversal() },
+                                                enabled = dfsTargetItem != null && dfsParsedStats.validPasswords.isNotEmpty(),
+                                                shape = RoundedCornerShape(8.dp),
+                                                colors = ButtonDefaults.buttonColors(containerColor = BlynkBlue),
+                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)
+                                            ) {
+                                                Text("Uji DFS", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                            }
                                         }
-                                    } else {
-                                        Button(
-                                            onClick = { viewModel.startDfsTraversal() },
-                                            enabled = dfsTargetItem != null && dfsParsedStats.validPasswords.isNotEmpty(),
-                                            shape = RoundedCornerShape(8.dp),
-                                            colors = ButtonDefaults.buttonColors(containerColor = BlynkBlue),
-                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)
-                                        ) {
-                                            Text("Uji DFS", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                    AroundCheckMode.HYBRID -> {
+                                        val hybridParsed = remember(hybridCsvInput) { DfsPasswordSanitizer.parse(hybridCsvInput) }
+                                        Text(
+                                            text = "Hybrid: ${hybridParsed.validPasswords.size} pwd • ${scanItems.size} router",
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        if (isSequentialTesting) {
+                                            Button(
+                                                onClick = { viewModel.cancelTraversal() },
+                                                shape = RoundedCornerShape(8.dp),
+                                                colors = ButtonDefaults.buttonColors(containerColor = QualityRed),
+                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)
+                                            ) {
+                                                Text("Batal", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                        } else {
+                                            Button(
+                                                onClick = { viewModel.startHybridTraversal() },
+                                                enabled = scanItems.isNotEmpty() && hybridParsed.validPasswords.isNotEmpty(),
+                                                shape = RoundedCornerShape(8.dp),
+                                                colors = ButtonDefaults.buttonColors(containerColor = BlynkBlue),
+                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)
+                                            ) {
+                                                Text("Mulai Hybrid", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                            }
                                         }
                                     }
                                 }
@@ -605,6 +670,38 @@ fun AroundCheckScreen(
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = if (selectedMode == AroundCheckMode.DFS) Color.White else Color(0xFF64748B)
+                                    )
+                                }
+                            }
+
+                            // Mode Hybrid Tab
+                            Surface(
+                                shape = RoundedCornerShape(9.dp),
+                                color = if (selectedMode == AroundCheckMode.HYBRID) BlynkBlue else Color.Transparent,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(9.dp))
+                                    .clickable(enabled = !isSequentialTesting) {
+                                        viewModel.setMode(AroundCheckMode.HYBRID)
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(vertical = 7.dp, horizontal = 4.dp),
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Hub,
+                                        contentDescription = null,
+                                        tint = if (selectedMode == AroundCheckMode.HYBRID) Color.White else Color(0xFF64748B),
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "Mode Hybrid",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (selectedMode == AroundCheckMode.HYBRID) Color.White else Color(0xFF64748B)
                                     )
                                 }
                             }
@@ -706,7 +803,7 @@ fun AroundCheckScreen(
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                    } else {
+                    } else if (selectedMode == AroundCheckMode.DFS) {
                         // --- PANEL MODE DFS (Banyak Password CSV -> 1 Router Target) ---
                         // Target Selector Banner
                         Surface(
@@ -935,6 +1032,210 @@ fun AroundCheckScreen(
                                         "Pilih Target Wi-Fi Dulu"
                                     } else {
                                         "Mulai Traversal DFS (${dfsParsedStats.validPasswords.size} Pwd)"
+                                    },
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    } else {
+                        // --- PANEL MODE HYBRID (Banyak Password ke Banyak Router - DFS + BFS) ---
+                        val hybridParseResult = remember(hybridCsvInput) { DfsPasswordSanitizer.parse(hybridCsvInput) }
+                        val hybridValidPasswords = hybridParseResult.validPasswords
+
+                        // Header Ringkasan: Passphrase & Router Target
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = BlynkBlueTint,
+                            border = BorderStroke(1.dp, BlynkBlue.copy(alpha = 0.5f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Hub,
+                                        contentDescription = null,
+                                        tint = BlynkBlue,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Column {
+                                        Text(
+                                            text = "Mode Hybrid (DFS + BFS Otomatis)",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.sp,
+                                            color = BlynkBlueDark
+                                        )
+                                        Text(
+                                            text = "${hybridValidPasswords.size} Kata Sandi • ${scanItems.size} Router di Sekitar",
+                                            fontSize = 10.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+
+                                // Quick template button
+                                if (!isSequentialTesting) {
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = Color.White,
+                                        border = BorderStroke(1.dp, BlynkBlue.copy(alpha = 0.3f)),
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .clickable { viewModel.applyHybridPracticumTemplate() }
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.AutoMirrored.Rounded.PlaylistAddCheck,
+                                                contentDescription = null,
+                                                tint = BlynkBlue,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(
+                                                text = "Muat Modul",
+                                                fontSize = 10.5.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = BlynkBlue
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Input CSV Passphrase Hybrid
+                        OutlinedTextField(
+                            value = hybridCsvInput,
+                            onValueChange = { viewModel.setHybridCsvInput(it) },
+                            label = { Text("Daftar Passphrase Lab (CSV)", fontSize = 12.sp) },
+                            placeholder = { Text("Contoh: 12345678; admin123; ilmukomputeripb", fontSize = 11.sp) },
+                            modifier = Modifier.fillMaxWidth(),
+                            textStyle = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                            maxLines = 3,
+                            trailingIcon = {
+                                IconButton(onClick = { viewModel.toggleHybridCsvVisibility() }) {
+                                    Icon(
+                                        imageVector = if (isHybridCsvVisible) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff,
+                                        contentDescription = "Toggle CSV visibility",
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            },
+                            visualTransformation = if (isHybridCsvVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = BlynkBlue,
+                                unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                            ),
+                            enabled = !isSequentialTesting
+                        )
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        // Sanitizer Chips
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = if (hybridValidPasswords.isNotEmpty()) Color(0xFFDCFCE7) else Color(0xFFF1F5F9)
+                            ) {
+                                Text(
+                                    text = "${hybridValidPasswords.size} valid",
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (hybridValidPasswords.isNotEmpty()) Color(0xFF15803D) else Color(0xFF64748B),
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+
+                            if (hybridParseResult.skippedTooShortCount > 0) {
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = Color(0xFFFEF3C7)
+                                ) {
+                                    Text(
+                                        text = "${hybridParseResult.skippedTooShortCount} (<8 char)",
+                                        fontSize = 10.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF92400E),
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+
+                            if (hybridParseResult.duplicateCount > 0) {
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = Color(0xFFEFF6FF)
+                                ) {
+                                    Text(
+                                        text = "${hybridParseResult.duplicateCount} duplikat",
+                                        fontSize = 10.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = BlynkBlueDark,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Action Button
+                        if (isSequentialTesting) {
+                            Button(
+                                onClick = { viewModel.cancelTraversal() },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = QualityRed)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Close,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Hentikan Traversal Hybrid", fontWeight = FontWeight.Bold)
+                            }
+                        } else {
+                            Button(
+                                onClick = {
+                                    keyboardController?.hide()
+                                    viewModel.startHybridTraversal()
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled = scanItems.isNotEmpty() && hybridValidPasswords.isNotEmpty(),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = BlynkBlue)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Hub,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = if (scanItems.isEmpty()) {
+                                        "Daftar Wi-Fi Kosong (Scan Terlebih Dahulu)"
+                                    } else if (hybridValidPasswords.isEmpty()) {
+                                        "Masukkan Passphrase Minimal 1"
+                                    } else {
+                                        "Mulai Traversal Hybrid (${hybridValidPasswords.size} Pwd ke ${scanItems.size} Router)"
                                     },
                                     fontWeight = FontWeight.Bold
                                 )
@@ -1376,12 +1677,6 @@ fun AroundCheckScreen(
             }
 
             // 4. Daftar Hasil Pemindaian Wi-Fi (Modern Blynk Tile Style)
-            val scanItems = when (val s = scanState) {
-                is WifiScanState.Success -> s.items
-                is WifiScanState.Throttled -> s.items
-                else -> emptyList()
-            }
-
             if (scanItems.isEmpty() && scanState !is WifiScanState.Scanning) {
                 Surface(
                     shape = RoundedCornerShape(16.dp),
@@ -1450,6 +1745,7 @@ fun AroundCheckScreen(
                             isWaitingApproval = isWaitingApproval,
                             isDfsMode = selectedMode == AroundCheckMode.DFS,
                             isDfsTarget = isDfsTarget,
+                            hybridStatus = hybridRouterStatuses[item.bssid.ifBlank { item.ssid }],
                             isVerified = verifiedItem != null,
                             verifiedPassword = verifiedItem?.workingPassword,
                             onSelectDfsTarget = { viewModel.selectDfsTargetItem(item) },
@@ -1520,6 +1816,7 @@ private fun WifiScanItemCard(
     isWaitingApproval: Boolean,
     isDfsMode: Boolean = false,
     isDfsTarget: Boolean = false,
+    hybridStatus: HybridRouterStatus? = null,
     isVerified: Boolean = false,
     verifiedPassword: String? = null,
     onSelectDfsTarget: (() -> Unit)? = null,
@@ -1537,10 +1834,10 @@ private fun WifiScanItemCard(
         shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(
-            width = if (isDfsTarget) 2.dp else if (isTarget) 1.5.dp else 1.dp,
-            color = if (isDfsTarget) BlynkBlue else if (isTarget) BlynkBlue else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+            width = if (isDfsTarget || hybridStatus is HybridRouterStatus.Testing) 2.dp else if (isTarget) 1.5.dp else 1.dp,
+            color = if (isDfsTarget || hybridStatus is HybridRouterStatus.Testing) BlynkBlue else if (isTarget) BlynkBlue else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
         ),
-        shadowElevation = if (isDfsTarget || isTarget) 3.dp else 1.dp,
+        shadowElevation = if (isDfsTarget || isTarget || hybridStatus is HybridRouterStatus.Testing) 3.dp else 1.dp,
         modifier = Modifier
             .fillMaxWidth()
             .then(
@@ -1568,10 +1865,12 @@ private fun WifiScanItemCard(
                             .clip(CircleShape)
                             .background(
                                 when {
+                                    hybridStatus is HybridRouterStatus.Found || hybridStatus is HybridRouterStatus.VerifiedFromVault -> QualityGreen.copy(alpha = 0.15f)
                                     isVerified -> QualityGreen.copy(alpha = 0.15f)
                                     status == WifiConnectStatus.Connected -> QualityGreen.copy(alpha = 0.15f)
                                     status == WifiConnectStatus.WaitingApproval -> QualityAmber.copy(alpha = 0.15f)
                                     status == WifiConnectStatus.Rejected || status == WifiConnectStatus.Failed -> QualityRed.copy(alpha = 0.15f)
+                                    hybridStatus is HybridRouterStatus.NotFound -> Color(0xFFF1F5F9)
                                     else -> BlynkBlueTint
                                 }
                             ),
@@ -1579,17 +1878,21 @@ private fun WifiScanItemCard(
                     ) {
                         Icon(
                             imageVector = when {
+                                hybridStatus is HybridRouterStatus.Found || hybridStatus is HybridRouterStatus.VerifiedFromVault -> Icons.Rounded.CheckCircle
                                 isVerified -> Icons.Rounded.CheckCircle
                                 status == WifiConnectStatus.Connected -> Icons.Rounded.CheckCircle
                                 status == WifiConnectStatus.Rejected || status == WifiConnectStatus.Failed -> Icons.Rounded.Close
+                                hybridStatus is HybridRouterStatus.NotFound -> Icons.Rounded.RemoveCircleOutline
                                 else -> Icons.Rounded.Wifi
                             },
                             contentDescription = null,
                             tint = when {
+                                hybridStatus is HybridRouterStatus.Found || hybridStatus is HybridRouterStatus.VerifiedFromVault -> QualityGreen
                                 isVerified -> QualityGreen
                                 status == WifiConnectStatus.Connected -> QualityGreen
                                 status == WifiConnectStatus.WaitingApproval -> QualityAmber
                                 status == WifiConnectStatus.Rejected || status == WifiConnectStatus.Failed -> QualityRed
+                                hybridStatus is HybridRouterStatus.NotFound -> Color(0xFF64748B)
                                 else -> BlynkBlue
                             },
                             modifier = Modifier.size(20.dp)
@@ -1767,6 +2070,163 @@ private fun WifiScanItemCard(
                             )
                         }
                     }
+                }
+            }
+
+            // Status Traversal Hybrid (Badge Khusus Sesi Hybrid: Found / NotFound / Testing)
+            if (hybridStatus != null && hybridStatus !is HybridRouterStatus.Idle) {
+                Spacer(modifier = Modifier.height(8.dp))
+                when (hybridStatus) {
+                    is HybridRouterStatus.Found -> {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFFDCFCE7),
+                            border = BorderStroke(1.dp, Color(0xFF86EFAC)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.CheckCircle,
+                                        contentDescription = null,
+                                        tint = Color(0xFF15803D),
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "Cocok: ${hybridStatus.workingPassword}",
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF15803D)
+                                    )
+                                }
+
+                                if (hybridStatus.workingPassword.isNotBlank()) {
+                                    IconButton(
+                                        onClick = { onCopyVerifiedPassword?.invoke(hybridStatus.workingPassword) },
+                                        modifier = Modifier.size(24.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.ContentCopy,
+                                            contentDescription = "Salin Password",
+                                            tint = Color(0xFF15803D),
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    is HybridRouterStatus.VerifiedFromVault -> {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFFDCFCE7),
+                            border = BorderStroke(1.dp, Color(0xFF86EFAC)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.CheckCircle,
+                                        contentDescription = null,
+                                        tint = Color(0xFF15803D),
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "Terverifikasi (Vault): ${hybridStatus.workingPassword}",
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF15803D)
+                                    )
+                                }
+
+                                if (hybridStatus.workingPassword.isNotBlank()) {
+                                    IconButton(
+                                        onClick = { onCopyVerifiedPassword?.invoke(hybridStatus.workingPassword) },
+                                        modifier = Modifier.size(24.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.ContentCopy,
+                                            contentDescription = "Salin Password",
+                                            tint = Color(0xFF15803D),
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    is HybridRouterStatus.NotFound -> {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFFF1F5F9),
+                            border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.RemoveCircleOutline,
+                                    contentDescription = null,
+                                    tint = Color(0xFF64748B),
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "${hybridStatus.testedCount} Passphrase Tidak Cocok",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = Color(0xFF64748B)
+                                )
+                            }
+                        }
+                    }
+                    is HybridRouterStatus.Testing -> {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = BlynkBlueTint,
+                            border = BorderStroke(1.dp, BlynkBlue.copy(alpha = 0.5f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(13.dp),
+                                    strokeWidth = 1.5.dp,
+                                    color = BlynkBlue
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Sedang Diuji [${hybridStatus.currentPasswordIndex}/${hybridStatus.totalPasswords}]...",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = BlynkBlueDark
+                                )
+                            }
+                        }
+                    }
+                    else -> {}
                 }
             }
 
