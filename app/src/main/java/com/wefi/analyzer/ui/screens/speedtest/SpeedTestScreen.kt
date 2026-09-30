@@ -232,6 +232,7 @@ fun SpeedTestScreen(
                                     SpeedTestStage.UPLOAD -> "MENGUNGGAH (UPLOAD)"
                                     SpeedTestStage.FINISHED -> "SELESAI"
                                     SpeedTestStage.ERROR -> "GAGAL"
+                                    SpeedTestStage.OFFLINE_LAB_MODE -> "MODE LAB OFFLINE"
                                 },
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,

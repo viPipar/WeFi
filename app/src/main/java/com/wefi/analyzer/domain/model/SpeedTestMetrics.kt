@@ -6,7 +6,8 @@ enum class SpeedTestStage {
     DOWNLOAD,
     UPLOAD,
     FINISHED,
-    ERROR
+    ERROR,
+    OFFLINE_LAB_MODE
 }
 
 /**
