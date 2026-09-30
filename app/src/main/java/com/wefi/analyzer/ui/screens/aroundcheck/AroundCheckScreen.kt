@@ -259,15 +259,14 @@ fun AroundCheckScreen(
         )
     }
 
-    Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-        containerColor = MaterialTheme.colorScheme.background,
-        modifier = modifier.fillMaxSize()
-    ) { paddingValues ->
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
                 .padding(horizontal = 16.dp)
         ) {
             Spacer(modifier = Modifier.height(8.dp))
@@ -565,7 +564,12 @@ fun AroundCheckScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
+            androidx.compose.material3.HorizontalDivider(
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                thickness = 1.dp
+            )
+            Spacer(modifier = Modifier.height(8.dp))
 
             // Warning Banners (Lokasi / Izin)
             val isLocDisabled = scanState is WifiScanState.LocationDisabled ||
@@ -741,14 +745,16 @@ fun AroundCheckScreen(
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    contentPadding = PaddingValues(bottom = 24.dp)
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = PaddingValues(top = 4.dp, bottom = 100.dp)
                 ) {
                     items(
                         items = scanItems,
                         key = { it.bssid.ifBlank { it.ssid } }
                     ) { item ->
-                        val cooldownSec = viewModel.getRemainingCooldownForSsid(item.ssid)
+                        val isTarget = connectState.targetSsid == item.ssid
+                        // Hanya tampilkan tombol countdown jika kartu ini adalah target aktif / yang baru saja dicoba
+                        val cooldownSec = if (isTarget) viewModel.getRemainingCooldownForSsid(item.ssid) else 0
                         val isWaitingApproval = viewModel.isItemWaitingApproval(item.ssid)
 
                         WifiScanItemCard(
@@ -760,13 +766,20 @@ fun AroundCheckScreen(
                             onCancelClick = { viewModel.cancelConnect() },
                             onForgetClick = { viewModel.forgetNetwork(item.ssid) },
                             onCooldownClick = {
-                                viewModel.sendSnackbar("Tunggu cooldown Golden Time ${cooldownSec}s untuk ${item.ssid}")
+                                viewModel.sendSnackbar("Tunggu jeda router ${cooldownSec}s untuk ${item.ssid}")
                             }
                         )
                     }
                 }
             }
         }
+
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 16.dp)
+        )
     }
 }
 
@@ -974,13 +987,43 @@ private fun WifiScanItemCard(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.weight(1f)
                         ) {
-                            if (status == WifiConnectStatus.WaitingApproval) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(14.dp),
-                                    strokeWidth = 2.dp,
-                                    color = QualityAmber
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
+                            when (status) {
+                                WifiConnectStatus.WaitingApproval -> {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(14.dp),
+                                        strokeWidth = 2.dp,
+                                        color = QualityAmber
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                }
+                                WifiConnectStatus.Connected -> {
+                                    Icon(
+                                        imageVector = Icons.Rounded.CheckCircle,
+                                        contentDescription = null,
+                                        tint = QualityGreen,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                }
+                                WifiConnectStatus.Rejected, WifiConnectStatus.Failed -> {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Close,
+                                        contentDescription = null,
+                                        tint = QualityRed,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                }
+                                WifiConnectStatus.Timeout, is WifiConnectStatus.Cooldown -> {
+                                    Icon(
+                                        imageVector = Icons.Rounded.HourglassBottom,
+                                        contentDescription = null,
+                                        tint = QualityAmber,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                }
+                                else -> {}
                             }
                             Text(
                                 text = when (status) {
@@ -1019,58 +1062,67 @@ private fun WifiScanItemCard(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Row Bawah: Tombol Lupakan Jaringan & Tombol Connect Interaktif
+            // Row Bawah: Info Frekuensi / Kanal di kiri, Aksi Forget + Connect di kanan
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(
-                    onClick = onForgetClick,
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.DeleteOutline,
-                        contentDescription = "Lupakan Jaringan",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
+                Text(
+                    text = if (item.frequencyMhz > 4900) "Kanal ${item.channel} • 5 GHz" else "Kanal ${item.channel} • 2.4 GHz",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                )
 
-                Spacer(modifier = Modifier.width(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = onForgetClick,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.DeleteOutline,
+                            contentDescription = "Lupakan Jaringan",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
 
-                // Tombol Connect dengan penanganan Cooldown yang responsif
-                Button(
-                    onClick = {
-                        if (isCoolingDown) {
-                            onCooldownClick()
-                        } else if (!isWaitingApproval) {
-                            onConnectClick()
-                        }
-                    },
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isCoolingDown) QualityAmber else BlynkBlue,
-                        disabledContainerColor = BlynkBlue.copy(alpha = 0.35f)
-                    ),
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
-                ) {
-                    Icon(
-                        imageVector = if (isCoolingDown) Icons.Rounded.Timer else Icons.Rounded.WifiTethering,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
-                    )
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = when {
-                            status == WifiConnectStatus.Connected -> "Tersambung"
-                            isCoolingDown -> "Tunggu (${cooldownSeconds}s)"
-                            isWaitingApproval -> "Memproses..."
-                            else -> "Connect"
+
+                    // Tombol Connect dengan penanganan Cooldown yang responsif
+                    Button(
+                        onClick = {
+                            if (isCoolingDown) {
+                                onCooldownClick()
+                            } else if (!isWaitingApproval) {
+                                onConnectClick()
+                            }
                         },
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp
-                    )
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isCoolingDown) QualityAmber else BlynkBlue,
+                            disabledContainerColor = BlynkBlue.copy(alpha = 0.35f)
+                        ),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isCoolingDown) Icons.Rounded.Timer else Icons.Rounded.WifiTethering,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = when {
+                                status == WifiConnectStatus.Connected -> "Tersambung"
+                                isCoolingDown -> "Tunggu (${cooldownSeconds}s)"
+                                isWaitingApproval -> "Memproses..."
+                                else -> "Connect"
+                            },
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp
+                        )
+                    }
                 }
             }
         }
