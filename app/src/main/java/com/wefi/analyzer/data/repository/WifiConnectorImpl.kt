@@ -158,7 +158,7 @@ class WifiConnectorImpl(
         if (eligibility is ConnectCheckResult.Blocked) {
             _connectState.value = WifiConnectState(
                 targetSsid = ssid,
-                status = WifiConnectStatus.Failed,
+                status = WifiConnectStatus.Cooldown(eligibility.remainingSeconds),
                 message = "${eligibility.reason} (Tunggu ${eligibility.remainingSeconds}s)"
             )
             return

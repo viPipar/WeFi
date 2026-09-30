@@ -10,6 +10,7 @@ sealed interface WifiConnectStatus {
     data object Rejected : WifiConnectStatus
     data object Failed : WifiConnectStatus
     data object Timeout : WifiConnectStatus
+    data class Cooldown(val remainingSeconds: Int) : WifiConnectStatus
 }
 
 /**

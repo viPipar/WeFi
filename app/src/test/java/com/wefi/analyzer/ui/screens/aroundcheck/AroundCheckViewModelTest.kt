@@ -127,6 +127,14 @@ class AroundCheckViewModelTest {
         fakeConnector.allowConnect = false
         assertFalse(viewModel.canConnectToSsid("Lab-Wifi"))
     }
+
+    @Test
+    fun isItemWaitingApproval_returnsTrueWhenTargetAndStatusMatch() {
+        assertFalse(viewModel.isItemWaitingApproval("Lab-Wifi"))
+        fakeConnector.setWaitingApproval("Lab-Wifi")
+        assertTrue(viewModel.isItemWaitingApproval("Lab-Wifi"))
+        assertFalse(viewModel.isItemWaitingApproval("Other-Wifi"))
+    }
 }
 
 private class FakeWifiScanner : WifiScanner {
@@ -157,6 +165,10 @@ private class FakeWifiConnector : WifiConnector {
     var cancelCalled = false
     var lastForgottenSsid: String? = null
     var allowConnect = true
+
+    fun setWaitingApproval(ssid: String) {
+        _connectState.value = WifiConnectState(targetSsid = ssid, status = WifiConnectStatus.WaitingApproval)
+    }
 
     override fun canConnect(ssid: String): ConnectCheckResult {
         return if (allowConnect) ConnectCheckResult.Allowed else ConnectCheckResult.Blocked("Cooldown", 5)

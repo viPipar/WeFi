@@ -30,6 +30,12 @@ sealed interface WifiScanState {
     data object Idle : WifiScanState
     data object Scanning : WifiScanState
     data class Success(val items: List<WifiScanItem>) : WifiScanState
+    data class Throttled(
+        val items: List<WifiScanItem>,
+        val remainingCooldownSeconds: Int
+    ) : WifiScanState
+    data object PermissionMissing : WifiScanState
+    data object LocationDisabled : WifiScanState
     data class Error(
         val message: String,
         val isLocationDisabled: Boolean = false

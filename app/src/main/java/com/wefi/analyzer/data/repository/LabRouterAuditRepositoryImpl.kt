@@ -4,31 +4,18 @@ import com.wefi.analyzer.domain.model.LabAuditLogEntry
 import com.wefi.analyzer.domain.model.LabAuditStatus
 import com.wefi.analyzer.domain.model.LabAuditTarget
 import com.wefi.analyzer.domain.repository.LabRouterAuditRepository
-import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.withContext
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
-import org.json.JSONObject
-import java.security.MessageDigest
-import java.util.concurrent.TimeUnit
 
-class LabRouterAuditRepositoryImpl(
-    private val labApiEndpoint: String? = null,
-    private val httpClient: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(5, TimeUnit.SECONDS)
-        .readTimeout(5, TimeUnit.SECONDS)
-        .build(),
-    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
-) : LabRouterAuditRepository {
+/**
+ * Repository audit log router laboratorium.
+ * Seluruh verifikasi kredensial dan koneksi nirkabel telah dialihkan ke WifiConnector resmi.
+ * Kelas ini dipertahankan khusus untuk pencatatan dan pengelolaan riwayat audit log lab.
+ */
+class LabRouterAuditRepositoryImpl : LabRouterAuditRepository {
 
     override val authorizedSsids: Set<String> = emptySet()
 
@@ -37,6 +24,11 @@ class LabRouterAuditRepositoryImpl(
 
     override fun isSsidAuthorized(ssid: String): Boolean = ssid.isNotBlank()
 
+    /**
+     * Sesuai arsitektur resmi Android, verifikasi kredensial nyata dilakukan
+     * melalui WifiConnectorImpl dan dialog persetujuan OS.
+     * Metode ini mencatat upaya ke audit log tanpa simulasi atau hash derivation.
+     */
     override fun testRouterCredential(
         target: LabAuditTarget,
         candidateKey: String
@@ -68,40 +60,8 @@ class LabRouterAuditRepositoryImpl(
             return@flow
         }
 
-        if (candidate.length > MAX_CANDIDATE_LENGTH) {
-            emit(LabAuditStatus.ERROR)
-            recordLog(
-                LabAuditLogEntry(
-                    targetSsid = target.ssid,
-                    targetBssid = target.bssid,
-                    status = LabAuditStatus.ERROR,
-                    notes = "Panjang kredensial melebihi batas"
-                )
-            )
-            return@flow
-        }
-
-        emit(LabAuditStatus.TESTING)
-        delay(SIMULATED_LATENCY_MS)
-
-        val endpointResult = verifyWithLabEndpoint(target.ssid, candidate)
-
-        val finalStatus = when (endpointResult) {
-            VerifyResult.Matched -> LabAuditStatus.MATCHED
-            VerifyResult.NotMatched -> LabAuditStatus.FAILED
-            VerifyResult.Unavailable -> {
-                val local = isCredentialMatched(target.ssid, candidate)
-                if (local) LabAuditStatus.MATCHED else LabAuditStatus.FAILED
-            }
-            VerifyResult.Error -> LabAuditStatus.ERROR
-        }
-
-        val notes = when (finalStatus) {
-            LabAuditStatus.MATCHED -> "Kredensial cocok (MATCH)"
-            LabAuditStatus.FAILED -> "Kredensial tidak cocok (MISMATCH)"
-            LabAuditStatus.ERROR -> "Endpoint lab tidak merespons / error"
-            else -> "Status tak terduga"
-        }
+        val finalStatus = LabAuditStatus.ERROR
+        val notes = "Verifikasi kredensial nirkabel dialihkan ke WifiConnector resmi"
 
         emit(finalStatus)
         recordLog(
@@ -112,67 +72,6 @@ class LabRouterAuditRepositoryImpl(
                 notes = notes
             )
         )
-    }
-
-    private enum class VerifyResult { Matched, NotMatched, Unavailable, Error }
-
-    private suspend fun verifyWithLabEndpoint(
-        ssid: String,
-        candidate: String
-    ): VerifyResult {
-        val endpoint = labApiEndpoint ?: return VerifyResult.Unavailable
-        return withContext(ioDispatcher) {
-            try {
-                val jsonBody = JSONObject().apply {
-                    put("ssid", ssid)
-                    put("candidate", candidate)
-                }.toString()
-
-                val request = Request.Builder()
-                    .url(endpoint)
-                    .post(jsonBody.toRequestBody("application/json".toMediaType()))
-                    .build()
-
-                httpClient.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) {
-                        return@withContext VerifyResult.Error
-                    }
-                    val bodyStr = response.body?.string().orEmpty()
-                    if (bodyStr.isBlank()) {
-                        return@withContext VerifyResult.Error
-                    }
-                    val json = JSONObject(bodyStr)
-                    if (!json.has("valid")) {
-                        return@withContext VerifyResult.Error
-                    }
-                    if (json.getBoolean("valid")) {
-                        VerifyResult.Matched
-                    } else {
-                        VerifyResult.NotMatched
-                    }
-                }
-            } catch (e: Exception) {
-                VerifyResult.Unavailable
-            }
-        }
-    }
-
-    private fun isCredentialMatched(ssid: String, candidate: String): Boolean {
-        val base = ssid.trim()
-        if (base.isEmpty()) return false
-
-        val expected = buildSet {
-            add(base)
-            add("${base}123")
-            add("${base}2026")
-            add("lab$base")
-            add("${base}_lab")
-            add("${base}@lab")
-            add("admin$base")
-        }
-
-        val candidateHash = sha256(candidate)
-        return expected.any { constantTimeEquals(sha256(it), candidateHash) }
     }
 
     override fun recordLog(entry: LabAuditLogEntry) {
@@ -189,20 +88,5 @@ class LabRouterAuditRepositoryImpl(
 
     private companion object {
         const val MAX_LOG_ENTRIES = 100
-        const val MAX_CANDIDATE_LENGTH = 128
-        const val SIMULATED_LATENCY_MS = 350L
-
-        fun sha256(input: String): String {
-            val md = MessageDigest.getInstance("SHA-256")
-            return md.digest(input.toByteArray(Charsets.UTF_8))
-                .joinToString("") { "%02x".format(it) }
-        }
-
-        fun constantTimeEquals(a: String, b: String): Boolean {
-            if (a.length != b.length) return false
-            var diff = 0
-            for (i in a.indices) diff = diff or (a[i].code xor b[i].code)
-            return diff == 0
-        }
     }
 }

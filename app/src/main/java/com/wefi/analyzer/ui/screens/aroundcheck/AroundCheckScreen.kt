@@ -321,7 +321,10 @@ fun AroundCheckScreen(
         Spacer(modifier = Modifier.height(10.dp))
 
         // Banner Peringatan Lokasi Nonaktif
-        if (scanState is WifiScanState.Error && (scanState as WifiScanState.Error).isLocationDisabled) {
+        val isLocDisabled = scanState is WifiScanState.LocationDisabled ||
+            (scanState is WifiScanState.Error && (scanState as WifiScanState.Error).isLocationDisabled)
+
+        if (isLocDisabled) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp),
@@ -362,6 +365,56 @@ fun AroundCheckScreen(
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
                     ) {
                         Text("Buka Pengaturan Lokasi", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+        }
+
+        // Banner Peringatan Izin Missing
+        if (scanState is WifiScanState.PermissionMissing) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                color = Color(0xFFFEE2E2),
+                border = BorderStroke(1.dp, QualityRed.copy(alpha = 0.5f))
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Rounded.Warning,
+                            contentDescription = null,
+                            tint = QualityRed,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Izin Pemindaian Belum Diberikan",
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color(0xFF991B1B)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Aplikasi membutuhkan izin ACCESS_FINE_LOCATION atau NEARBY_WIFI_DEVICES untuk membaca daftar Wi-Fi sekitar.",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontSize = 11.5.sp,
+                        color = Color(0xFF7F1D1D)
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Button(
+                        onClick = {
+                            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                data = android.net.Uri.fromParts("package", context.packageName, null)
+                            }
+                            context.startActivity(intent)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = QualityRed),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                    ) {
+                        Text("Buka Pengaturan Aplikasi", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -417,7 +470,11 @@ fun AroundCheckScreen(
         }
 
         // Daftar Hasil Pemindaian Wi-Fi dengan Stable Key
-        val scanItems = (scanState as? WifiScanState.Success)?.items ?: emptyList()
+        val scanItems = when (val s = scanState) {
+            is WifiScanState.Success -> s.items
+            is WifiScanState.Throttled -> s.items
+            else -> emptyList()
+        }
 
         if (scanItems.isEmpty() && scanState !is WifiScanState.Scanning) {
             BlynkCard {
@@ -595,6 +652,7 @@ private fun WifiScanItemCard(
                         WifiConnectStatus.WaitingApproval -> Color(0xFFFEF3C7)
                         WifiConnectStatus.Rejected, WifiConnectStatus.Failed -> Color(0xFFFEE2E2)
                         WifiConnectStatus.Timeout -> Color(0xFFFFEDD5)
+                        is WifiConnectStatus.Cooldown -> Color(0xFFFEF3C7)
                         else -> Color.Transparent
                     },
                     modifier = Modifier.fillMaxWidth()
@@ -623,6 +681,7 @@ private fun WifiScanItemCard(
                                     WifiConnectStatus.Rejected -> "Ditolak oleh user"
                                     WifiConnectStatus.Failed -> connectState.message.ifBlank { "Gagal tersambung" }
                                     WifiConnectStatus.Timeout -> "Timeout persetujuan"
+                                    is WifiConnectStatus.Cooldown -> "Cooldown: tunggu ${status.remainingSeconds}s"
                                     else -> ""
                                 },
                                 fontWeight = FontWeight.SemiBold,
@@ -632,6 +691,7 @@ private fun WifiScanItemCard(
                                     WifiConnectStatus.WaitingApproval -> Color(0xFF92400E)
                                     WifiConnectStatus.Rejected, WifiConnectStatus.Failed -> Color(0xFFB91C1C)
                                     WifiConnectStatus.Timeout -> Color(0xFFC2410C)
+                                    is WifiConnectStatus.Cooldown -> Color(0xFF92400E)
                                     else -> Color.Unspecified
                                 }
                             )

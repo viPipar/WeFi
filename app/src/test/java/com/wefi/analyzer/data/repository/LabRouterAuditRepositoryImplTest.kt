@@ -61,34 +61,7 @@ class LabRouterAuditRepositoryImplTest {
     }
 
     @Test
-    fun authorizedSsid_matchesCredentialCorrectly() = runTest {
-        val target = LabAuditTarget(
-            ssid = "ilmukomputeripb",
-            bssid = "00:AA:BB:CC:DD:EE",
-            isAuthorized = true
-        )
-        val results = repository.testRouterCredential(target, "ilmukomputeripb").toList()
-        assertTrue(results.contains(LabAuditStatus.TESTING))
-        assertTrue(results.contains(LabAuditStatus.MATCHED))
-
-        val logs = repository.auditLogs.value
-        assertTrue(logs.any { it.targetSsid == "ilmukomputeripb" && it.status == LabAuditStatus.MATCHED })
-    }
-
-    @Test
-    fun authorizedSsid_failsWhenCredentialIncorrect() = runTest {
-        val target = LabAuditTarget(
-            ssid = "ilmukomputeripb",
-            bssid = "00:AA:BB:CC:DD:EE",
-            isAuthorized = true
-        )
-        val results = repository.testRouterCredential(target, "wrongPassword999").toList()
-        assertTrue(results.contains(LabAuditStatus.TESTING))
-        assertTrue(results.contains(LabAuditStatus.FAILED))
-    }
-
-    @Test
-    fun clearLogs_emptiesLogHistory() {
+    fun recordLog_and_clearLogs_managesLogHistory() {
         val target = LabAuditTarget(ssid = "RouterLab", bssid = "AA:BB:CC:DD:EE:FF", isAuthorized = true)
         repository.recordLog(
             LabAuditLogEntry(
@@ -99,8 +72,27 @@ class LabRouterAuditRepositoryImplTest {
             )
         )
         assertEquals(1, repository.auditLogs.value.size)
+        assertEquals("RouterLab", repository.auditLogs.value[0].targetSsid)
+
         repository.clearLogs()
         assertEquals(0, repository.auditLogs.value.size)
+    }
+
+    @Test
+    fun recordLog_capsAt100Entries() {
+        for (i in 1..110) {
+            repository.recordLog(
+                LabAuditLogEntry(
+                    targetSsid = "Lab-$i",
+                    targetBssid = "00:11:22:33:44:$i",
+                    status = LabAuditStatus.MATCHED,
+                    notes = "Log $i"
+                )
+            )
+        }
+        assertEquals(100, repository.auditLogs.value.size)
+        // Entry terbaru ada di indeks 0
+        assertEquals("Lab-110", repository.auditLogs.value[0].targetSsid)
     }
 
     @Test

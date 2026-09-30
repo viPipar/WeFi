@@ -29,4 +29,24 @@ class WifiScannerImplTest {
             WifiScannerImpl.parseSecurityType(null)
         )
     }
+
+    @Test
+    fun processRawScanResults_emptyList_returnsEmpty() {
+        val result = WifiScannerImpl.processRawScanResults(emptyList())
+        org.junit.Assert.assertTrue(result.isEmpty())
+    }
+
+    @Test
+    fun startScan_whenWifiManagerNull_setsErrorStateAndReturnsFalse() {
+        val scanner = WifiScannerImpl(context = null, wifiManager = null)
+        val started = scanner.startScan()
+        org.junit.Assert.assertFalse(started)
+        org.junit.Assert.assertTrue(scanner.scanState.value is com.wefi.analyzer.domain.model.WifiScanState.Error)
+    }
+
+    @Test
+    fun toggleLabScanThrottle_whenContextNull_returnsFalse() {
+        val scanner = WifiScannerImpl(context = null, wifiManager = null)
+        org.junit.Assert.assertFalse(scanner.toggleLabScanThrottle(true))
+    }
 }

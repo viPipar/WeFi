@@ -1,15 +1,18 @@
 package com.wefi.analyzer.data.repository
 
+import android.Manifest
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.location.LocationManager
 import android.net.wifi.ScanResult
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.provider.Settings
 import android.util.Log
+import androidx.core.content.ContextCompat
 import androidx.core.location.LocationManagerCompat
 import com.wefi.analyzer.domain.model.WifiScanItem
 import com.wefi.analyzer.domain.model.WifiScanState
@@ -108,6 +111,16 @@ class WifiScannerImpl(
         _remainingScanCooldownSeconds.value = throttler.remainingCooldownSeconds()
     }
 
+    fun hasRequiredPermissions(): Boolean {
+        val ctx = context ?: return true
+        val hasFine = ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val hasNearby = ContextCompat.checkSelfPermission(ctx, Manifest.permission.NEARBY_WIFI_DEVICES) == PackageManager.PERMISSION_GRANTED
+            return hasNearby || hasFine
+        }
+        return hasFine
+    }
+
     override fun isLocationEnabled(): Boolean {
         val lm = locationManager ?: return true
         return LocationManagerCompat.isLocationEnabled(lm)
@@ -132,11 +145,13 @@ class WifiScannerImpl(
     }
 
     override fun startScan(): Boolean {
+        if (!hasRequiredPermissions()) {
+            _scanState.value = WifiScanState.PermissionMissing
+            return false
+        }
+
         if (!isLocationEnabled()) {
-            _scanState.value = WifiScanState.Error(
-                message = "Layanan lokasi perangkat mati. Aktifkan lokasi untuk memindai jaringan Wi-Fi.",
-                isLocationDisabled = true
-            )
+            _scanState.value = WifiScanState.LocationDisabled
             return false
         }
 
@@ -155,9 +170,10 @@ class WifiScannerImpl(
 
         // Periksa apakah sedang dalam masa cooldown rate limit
         if (!throttler.canScan(now)) {
-            _remainingScanCooldownSeconds.value = throttler.remainingCooldownSeconds(now)
-            // Selalu perbarui UI dengan membaca cache OS yang tidak di-throttle
-            refreshFromCache()
+            val cooldown = throttler.remainingCooldownSeconds(now)
+            _remainingScanCooldownSeconds.value = cooldown
+            val currentItems = processRawScanResults(wm.scanResults ?: emptyList())
+            _scanState.value = WifiScanState.Throttled(currentItems, cooldown)
             return false
         }
 
@@ -172,13 +188,15 @@ class WifiScannerImpl(
 
         // Catat hasil ke throttler: jika false, otomatis berlakukan backoff 10s tambahan (T+30s)
         throttler.recordScanAttempt(success = scanTriggered, now = now)
-        _remainingScanCooldownSeconds.value = throttler.remainingCooldownSeconds(now)
+        val cooldown = throttler.remainingCooldownSeconds(now)
+        _remainingScanCooldownSeconds.value = cooldown
 
         if (scanTriggered) {
             _lastScanTimestamp.value = now
         } else {
-            // Jika OS menolak/throttle, baca hasil cache terkini tanpa menunda
-            readScanResults(success = false)
+            // Jika OS menolak/throttle, baca hasil cache terkini tanpa menunda dan laporkan Throttled
+            val currentItems = processRawScanResults(wm.scanResults ?: emptyList())
+            _scanState.value = WifiScanState.Throttled(currentItems, cooldown)
         }
 
         return scanTriggered
@@ -197,7 +215,12 @@ class WifiScannerImpl(
         }
 
         val processedItems = processRawScanResults(rawResults)
-        _scanState.value = WifiScanState.Success(processedItems)
+        val cooldown = _remainingScanCooldownSeconds.value
+        _scanState.value = if (success || cooldown == 0) {
+            WifiScanState.Success(processedItems)
+        } else {
+            WifiScanState.Throttled(processedItems, cooldown)
+        }
     }
 
     override fun teardown() {
