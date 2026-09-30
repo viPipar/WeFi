@@ -29,11 +29,25 @@ class CalculateChannelRatingUseCase {
 
             apsInBand.forEach { ap ->
                 val chDiff = abs(ap.channel - ch)
-                if (chDiff <= 4) {
-                    val overlapFactor = (5.0 - chDiff) / 5.0
-                    val signalWeight = (100.0 - abs(ap.rssi.toDouble())) / 10.0
-                    penalty += signalWeight * overlapFactor
-                    if (chDiff == 0) count++
+                val signalWeight = (100.0 - abs(ap.rssi.toDouble())) / 10.0
+
+                if (bandGhz == 2.4) {
+                    // Pada 2.4GHz, kanal bersebelahan tumpang-tindih spektral jika selisih <= 4
+                    if (chDiff <= 4) {
+                        val overlapFactor = (5.0 - chDiff) / 5.0
+                        penalty += signalWeight * overlapFactor
+                        if (chDiff == 0) count++
+                    }
+                } else {
+                    // Pada 5GHz, kanal 20MHz bersifat ortogonal (non-overlapping).
+                    // Tumpang tindih hanya terjadi jika ko-kanal (chDiff == 0) atau kanal lebar (40/80MHz)
+                    val isCoveredByWideChannel = ap.channelWidthMhz > 20 && chDiff < (ap.channelWidthMhz / 5)
+                    if (chDiff == 0) {
+                        penalty += signalWeight
+                        count++
+                    } else if (isCoveredByWideChannel) {
+                        penalty += signalWeight * 0.5
+                    }
                 }
             }
 

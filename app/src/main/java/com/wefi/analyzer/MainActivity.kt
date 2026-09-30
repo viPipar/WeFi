@@ -61,6 +61,8 @@ class MainActivity : ComponentActivity() {
     private var scannerRepository: WifiScannerRepositoryImpl? = null
     private var connectionRepository: CurrentConnectionRepositoryImpl? = null
     private var hardwareRepository: DeviceHardwareRepositoryImpl? = null
+    private var wifiScanner: WifiScannerImpl? = null
+    private var wifiConnector: WifiConnectorImpl? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -72,14 +74,16 @@ class MainActivity : ComponentActivity() {
             val hardwareRepo = DeviceHardwareRepositoryImpl(applicationContext)
             val speedTestRepository = SpeedTestRepositoryImpl()
             val runSpeedTestUseCase = RunSpeedTestUseCase(speedTestRepository)
-            val wifiScanner = WifiScannerImpl(applicationContext)
+            val scanner = WifiScannerImpl(applicationContext)
             val auditLogger = WifiAuditLoggerImpl()
-            val wifiConnector = WifiConnectorImpl(context = applicationContext, auditLogger = auditLogger)
+            val connector = WifiConnectorImpl(context = applicationContext, auditLogger = auditLogger)
             val verifiedStore = VerifiedWifiStoreImpl(applicationContext)
 
             scannerRepository = scannerRepo
             connectionRepository = connectionRepo
             hardwareRepository = hardwareRepo
+            wifiScanner = scanner
+            wifiConnector = connector
 
             // Inisialisasi ViewModels
             val channelGraphViewModel = ChannelGraphViewModel(scannerRepo, connectionRepo)
@@ -87,8 +91,8 @@ class MainActivity : ComponentActivity() {
             val channelRatingViewModel = ChannelRatingViewModel(scannerRepo)
             val speedTestViewModel = SpeedTestViewModel(runSpeedTestUseCase, connectionRepo)
             val aroundCheckViewModel = AroundCheckViewModel(
-                scanner = wifiScanner,
-                connector = wifiConnector,
+                scanner = scanner,
+                connector = connector,
                 auditLogger = auditLogger,
                 verifiedStore = verifiedStore
             )
@@ -136,6 +140,8 @@ class MainActivity : ComponentActivity() {
             scannerRepository?.teardown()
             connectionRepository?.teardown()
             hardwareRepository?.teardown()
+            wifiScanner?.teardown()
+            wifiConnector?.teardown()
         } catch (e: Exception) {
             android.util.Log.w("MainActivity", "Gagal membersihkan repository", e)
         }

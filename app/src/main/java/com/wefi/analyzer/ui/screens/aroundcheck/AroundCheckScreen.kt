@@ -268,6 +268,19 @@ fun AroundCheckScreen(
                         )
                     )
 
+                    val isPasswordLengthValid = targetItem.security == WifiSecurityType.OPEN || passwordInput.length in 8..63
+                    val isPasswordTooShort = targetItem.security != WifiSecurityType.OPEN && passwordInput.isNotEmpty() && passwordInput.length < 8
+
+                    if (isPasswordTooShort) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Minimal 8 karakter (standar WPA2/WPA3)",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Text(
@@ -287,7 +300,7 @@ fun AroundCheckScreen(
                     },
                     shape = RoundedCornerShape(10.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = BlynkBlue),
-                    enabled = targetItem.security == WifiSecurityType.OPEN || passwordInput.isNotBlank()
+                    enabled = targetItem.security == WifiSecurityType.OPEN || passwordInput.length in 8..63
                 ) {
                     Text("Sambungkan", fontWeight = FontWeight.Bold)
                 }
@@ -1734,8 +1747,11 @@ fun AroundCheckScreen(
 
                         val isDfsTarget = (selectedMode == AroundCheckMode.DFS && dfsTargetItem?.bssid == item.bssid)
                         val verifiedItem = verifiedRouters.firstOrNull {
-                            it.bssid.equals(item.bssid, ignoreCase = true) ||
-                            (it.ssid.isNotBlank() && it.ssid == item.ssid)
+                            if (item.bssid.isNotBlank() && it.bssid.isNotBlank()) {
+                                it.bssid.equals(item.bssid, ignoreCase = true)
+                            } else {
+                                it.ssid.isNotBlank() && it.ssid == item.ssid
+                            }
                         }
 
                         WifiScanItemCard(

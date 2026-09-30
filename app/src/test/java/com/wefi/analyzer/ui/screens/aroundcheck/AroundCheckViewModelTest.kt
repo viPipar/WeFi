@@ -93,6 +93,18 @@ class AroundCheckViewModelTest {
     }
 
     @Test
+    fun submitConnect_whenPasswordTooShortForWpa2_blocksConnectAndRetainsDialog() = runTest(testDispatcher) {
+        val item = WifiScanItem("Lab-Wifi", "00:11:22:33:44:55", -60, WifiSecurityType.WPA2, 2412, 1)
+        viewModel.openPasswordDialog(item)
+        viewModel.setPasswordInput("short")
+        viewModel.submitConnect()
+        testScheduler.advanceUntilIdle()
+
+        assertNull("Koneksi tidak boleh dipanggil jika sandi < 8 karakter", fakeConnector.lastConnectSsid)
+        assertEquals(item, viewModel.selectedItemForPasswordDialog.value)
+    }
+
+    @Test
     fun openPasswordDialog_forOpenNetwork_triggersConnectImmediately() = runTest(testDispatcher) {
         val openItem = WifiScanItem("Free-Lab-Wifi", "00:11:22:33:44:66", -50, WifiSecurityType.OPEN, 2412, 1)
         viewModel.openPasswordDialog(openItem)

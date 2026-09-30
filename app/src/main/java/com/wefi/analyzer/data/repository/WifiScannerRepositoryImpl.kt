@@ -16,6 +16,7 @@ import com.wefi.analyzer.domain.usecase.CalculateDistanceUseCase
 import com.wefi.analyzer.domain.usecase.CalculateWifiQualityScoreUseCase
 import com.wefi.analyzer.domain.usecase.ParsePhyCapabilitiesUseCase
 import com.wefi.analyzer.domain.util.ChannelFrequencyUtils
+import com.wefi.analyzer.domain.util.WifiScanThrottler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -30,7 +31,8 @@ class WifiScannerRepositoryImpl(
     private val context: Context,
     private val calculateDistanceUseCase: CalculateDistanceUseCase = CalculateDistanceUseCase(),
     private val parsePhyCapabilitiesUseCase: ParsePhyCapabilitiesUseCase = ParsePhyCapabilitiesUseCase(),
-    private val calculateWifiQualityScoreUseCase: CalculateWifiQualityScoreUseCase = CalculateWifiQualityScoreUseCase()
+    private val calculateWifiQualityScoreUseCase: CalculateWifiQualityScoreUseCase = CalculateWifiQualityScoreUseCase(),
+    val throttler: WifiScanThrottler = WifiScanThrottler()
 ) : WifiScannerRepository {
 
     private val wifiManager = try {
@@ -55,8 +57,6 @@ class WifiScannerRepositoryImpl(
     private val repositoryScope = CoroutineScope(Dispatchers.Default)
 
     private var isReceiverRegistered = false
-    private var lastScanTriggerTime = 0L
-    private val MIN_SCAN_INTERVAL_MS = 20_000L // 20 detik (Golden Time: mematuhi batas 4 scan per 120s framework Android)
     private var periodicScanJob: Job? = null
 
     private val wifiScanReceiver = object : BroadcastReceiver() {
@@ -103,7 +103,7 @@ class WifiScannerRepositoryImpl(
         periodicScanJob?.cancel()
         periodicScanJob = repositoryScope.launch {
             while (isActive) {
-                delay(MIN_SCAN_INTERVAL_MS)
+                delay(PERIODIC_SCAN_INTERVAL_MS)
                 if (_isWifiEnabled.value) {
                     startScan()
                 }
@@ -133,15 +133,13 @@ class WifiScannerRepositoryImpl(
 
         if (_isScanning.value) return
 
-        val now = System.currentTimeMillis()
-        if (now - lastScanTriggerTime < MIN_SCAN_INTERVAL_MS) {
+        if (!throttler.canScan()) {
             // Dalam masa cooldown: tetap perbarui data dari cache terkini
             processScanResults()
             return
         }
 
         _isScanning.value = true
-        lastScanTriggerTime = now
 
         val success = try {
             wifiManager?.startScan() ?: false
@@ -149,6 +147,8 @@ class WifiScannerRepositoryImpl(
             Log.w(TAG, "wifiManager.startScan() dilempar exception oleh OS", e)
             false
         }
+
+        throttler.recordScanAttempt(success)
 
         if (!success) {
             // OS scan throttle atau failure: segera perbarui dari cache tanpa macet
@@ -249,5 +249,6 @@ class WifiScannerRepositoryImpl(
 
     companion object {
         private const val TAG = "WifiScannerRepo"
+        const val PERIODIC_SCAN_INTERVAL_MS = 30_000L // 30s interval: strictly respects Android HAL 4 scans per 120s
     }
 }

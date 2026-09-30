@@ -5,7 +5,9 @@ import com.wefi.analyzer.domain.model.SpeedTestMetrics
 import com.wefi.analyzer.domain.model.SpeedTestStage
 import com.wefi.analyzer.domain.repository.SpeedTestRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
@@ -121,11 +123,15 @@ class SpeedTestRepositoryImpl(
                     if (source != null && response.isSuccessful) {
                         val buffer = ByteArray(16384)
                         var bytesRead: Int
+                        var lastEmitTime = 0L
 
                         while (source.read(buffer).also { bytesRead = it } != -1) {
+                            kotlinx.coroutines.currentCoroutineContext().ensureActive()
                             totalBytesRead += bytesRead
-                            val elapsedSec = (System.currentTimeMillis() - startDownloadTime) / 1000.0
-                            if (elapsedSec > 0.2) {
+                            val now = System.currentTimeMillis()
+                            val elapsedSec = (now - startDownloadTime) / 1000.0
+                            if (elapsedSec > 0.2 && (now - lastEmitTime >= 100L)) {
+                                lastEmitTime = now
                                 val currentMbps = (totalBytesRead * 8.0) / (elapsedSec * 1_000_000.0)
                                 downloadSpeedMbps = round(currentMbps * 10) / 10
                                 emit(
@@ -141,6 +147,7 @@ class SpeedTestRepositoryImpl(
                 }
                 if (downloadSuccess) break
             } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 Log.w(TAG, "Download test attempt failed for $url", e)
             }
         }
@@ -179,6 +186,7 @@ class SpeedTestRepositoryImpl(
                 }
             }
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             Log.w(TAG, "Upload test failed: ${e.message}")
             uploadSpeedMbps = 0.0
         }

@@ -32,4 +32,22 @@ class CalculateChannelRatingUseCaseTest {
         assertTrue(ch6.stars < ch1.stars)
         assertTrue(ch1.isRecommended)
     }
+
+    @Test
+    fun `5GHz orthogonal adjacent 20MHz channels do not penalize each other`() {
+        val apOnCh40 = WifiAccessPoint(
+            bssid = "00:11:22:33:44:55",
+            ssid = "5GRouter",
+            rssi = -40,
+            frequencyMhz = 5200, // Ch 40
+            channel = 40,
+            channelWidthMhz = 20
+        )
+        val ratings = useCase.execute(listOf(apOnCh40), bandGhz = 5.0)
+        val ch36 = ratings.first { it.channel == 36 }
+        val ch40 = ratings.first { it.channel == 40 }
+
+        assertEquals(10, ch36.stars)
+        assertTrue(ch40.stars < 10)
+    }
 }

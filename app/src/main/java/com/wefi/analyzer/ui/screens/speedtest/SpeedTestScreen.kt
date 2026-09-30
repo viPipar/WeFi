@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.GraphicEq
@@ -315,32 +316,59 @@ fun SpeedTestScreen(
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // 4. Action Start Button
+        // 4. Action Start / Cancel Button
         val isNetworkAvailable = connectedAp != null || connectionInfo.ipAddress != "0.0.0.0" || connectionInfo.linkSpeedMbps > 0
-        Button(
-            onClick = { viewModel.startSpeedTest() },
-            enabled = !metrics.isRunning && isNetworkAvailable,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp),
-            shape = RoundedCornerShape(14.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = BlynkBlue,
-                disabledContainerColor = BlynkBlue.copy(alpha = 0.4f)
-            )
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.NetworkCheck,
-                contentDescription = null,
-                tint = Color.White
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = if (metrics.isRunning) "SEDANG MENGUJI JARINGAN..." else "MULAI UJI JARINGAN",
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-            )
+
+        if (metrics.isRunning) {
+            Button(
+                onClick = { viewModel.cancelSpeedTest() },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error
+                )
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Close,
+                    contentDescription = null,
+                    tint = Color.White
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "BATALKAN PENGUJIAN",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+            }
+        } else {
+            Button(
+                onClick = { viewModel.startSpeedTest() },
+                enabled = isNetworkAvailable,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = BlynkBlue,
+                    disabledContainerColor = BlynkBlue.copy(alpha = 0.4f)
+                )
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.NetworkCheck,
+                    contentDescription = null,
+                    tint = Color.White
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "MULAI UJI JARINGAN",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+            }
         }
     }
 }

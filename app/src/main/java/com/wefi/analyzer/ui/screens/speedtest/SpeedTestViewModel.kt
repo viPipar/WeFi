@@ -34,4 +34,18 @@ class SpeedTestViewModel(
             }
         }
     }
+
+    fun cancelSpeedTest() {
+        testJob?.cancel()
+        testJob = null
+        _metrics.value = _metrics.value.copy(
+            isRunning = false,
+            stage = com.wefi.analyzer.domain.model.SpeedTestStage.IDLE
+        )
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        cancelSpeedTest()
+    }
 }

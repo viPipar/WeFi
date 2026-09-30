@@ -214,6 +214,12 @@ class AroundCheckViewModel(
     fun submitConnect() {
         val target = _selectedItemForPasswordDialog.value ?: return
         val password = _passwordInput.value
+
+        if (target.security != WifiSecurityType.OPEN && password.length !in 8..63) {
+            sendSnackbar("Panjang kata sandi harus antara 8 dan 63 karakter.")
+            return
+        }
+
         dismissPasswordDialog()
 
         viewModelScope.launch(dispatcher) {
@@ -749,9 +755,8 @@ class AroundCheckViewModel(
 
     override fun onCleared() {
         super.onCleared()
-        traversalJob?.cancel()
-        circuitBreakerDeferred?.complete(false)
-        circuitBreakerDeferred = null
+        cancelTraversal()
+        connector.cancel()
     }
 
     companion object {
