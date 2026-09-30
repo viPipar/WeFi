@@ -553,6 +553,59 @@ class AroundCheckViewModelTest {
         assertEquals(HybridRouterStatus.Idle, statusA)
         assertTrue(fakeConnector.cancelCalled)
     }
+
+    @Test
+    fun startHybridTraversal_passesBssidAndDisconnectsPreFlight_whenAlreadyConnected() = runTest(testDispatcher) {
+        val routerA = WifiScanItem("Router-A", "11:22:33:44:55:01", -50, WifiSecurityType.WPA2, 2412, 1)
+        fakeScanner.setScanItems(listOf(routerA))
+        viewModel.setHybridCsvInput("passOne11;passTwo22")
+        fakeConnector.isCurrentlyConnectedResult = true
+
+        viewModel.startHybridTraversal()
+        testScheduler.advanceTimeBy(1500L)
+        testScheduler.runCurrent()
+
+        assertTrue("cancel harus dipanggil untuk pre-flight disconnect", fakeConnector.cancelCalled)
+        assertEquals("11:22:33:44:55:01", fakeConnector.lastConnectBssid)
+    }
+
+    @Test
+    fun startDfsTraversal_passesBssidAndDisconnectsPreFlight_whenAlreadyConnected() = runTest(testDispatcher) {
+        val target = WifiScanItem("Router-A", "11:22:33:44:55:01", -50, WifiSecurityType.WPA2, 2412, 1)
+        viewModel.selectDfsTargetItem(target)
+        viewModel.setDfsCsvInput("passOne11;passTwo22")
+        fakeConnector.isCurrentlyConnectedResult = true
+
+        viewModel.startDfsTraversal()
+        testScheduler.advanceTimeBy(1500L)
+        testScheduler.runCurrent()
+
+        assertTrue("cancel harus dipanggil untuk pre-flight disconnect pada DFS", fakeConnector.cancelCalled)
+        assertEquals("11:22:33:44:55:01", fakeConnector.lastConnectBssid)
+    }
+
+    @Test
+    fun startHybridTraversal_waitsCooldown_andRetriesCandidate() = runTest(testDispatcher) {
+        val routerA = WifiScanItem("Router-A", "11:22:33:44:55:01", -50, WifiSecurityType.WPA2, 2412, 1)
+        fakeScanner.setScanItems(listOf(routerA))
+        viewModel.setHybridCsvInput("passOne11;passTwo22")
+
+        viewModel.startHybridTraversal()
+        testScheduler.advanceTimeBy(600L)
+        testScheduler.runCurrent()
+
+        // Pass 1 returns Cooldown
+        fakeConnector.emitConnectState(
+            WifiConnectState(targetSsid = "Router-A", status = WifiConnectStatus.Cooldown(2))
+        )
+        testScheduler.advanceTimeBy(2500L)
+        testScheduler.runCurrent()
+
+        // It should still be testing candidate 1 ("passOne11") after cooldown
+        val status = viewModel.hybridRouterStatuses.value["11:22:33:44:55:01"]
+        assertTrue("Status harus tetap Testing password pertama setelah cooldown", status is HybridRouterStatus.Testing)
+        assertEquals(1, (status as HybridRouterStatus.Testing).currentPasswordIndex)
+    }
 }
 
 

