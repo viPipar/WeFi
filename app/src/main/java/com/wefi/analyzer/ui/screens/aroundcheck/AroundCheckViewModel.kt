@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -139,6 +140,36 @@ class AroundCheckViewModel(
     private var circuitBreakerDeferred: CompletableDeferred<Boolean>? = null
     private var circuitBreakerAcknowledged = false
 
+    // Router Lab Terpilih untuk Pengujian Masal (BFS & Hybrid)
+    private val _selectedRouterBssids = MutableStateFlow<Set<String>>(emptySet())
+    val selectedRouterBssids: StateFlow<Set<String>> = _selectedRouterBssids.asStateFlow()
+
+    private val seenRouterKeys = mutableSetOf<String>()
+
+    fun toggleRouterSelection(routerKey: String) {
+        _selectedRouterBssids.update { current ->
+            if (current.contains(routerKey)) {
+                current - routerKey
+            } else {
+                current + routerKey
+            }
+        }
+    }
+
+    fun selectAllRouters() {
+        val items = when (val s = scanState.value) {
+            is WifiScanState.Success -> s.items
+            is WifiScanState.Throttled -> s.items
+            else -> emptyList()
+        }
+        val allKeys = items.map { it.bssid.ifBlank { it.ssid } }.filter { it.isNotBlank() }.toSet()
+        _selectedRouterBssids.value = allKeys
+    }
+
+    fun deselectAllRouters() {
+        _selectedRouterBssids.value = emptySet()
+    }
+
     private var traversalJob: Job? = null
 
     private val _snackbarEvent = MutableSharedFlow<String>()
@@ -152,6 +183,20 @@ class AroundCheckViewModel(
 
     init {
         startScan()
+        viewModelScope.launch(dispatcher) {
+            scanner.scanState.collect { state ->
+                val items = when (state) {
+                    is WifiScanState.Success -> state.items
+                    is WifiScanState.Throttled -> state.items
+                    else -> emptyList()
+                }
+                val newKeys = items.map { it.bssid.ifBlank { it.ssid } }.filter { it.isNotBlank() && it !in seenRouterKeys }
+                if (newKeys.isNotEmpty()) {
+                    seenRouterKeys.addAll(newKeys)
+                    _selectedRouterBssids.update { it + newKeys }
+                }
+            }
+        }
     }
 
     fun setMode(mode: AroundCheckMode) {
@@ -334,16 +379,31 @@ class AroundCheckViewModel(
     fun startBfsTraversal() {
         if (_isSequentialTesting.value) return
 
-        val scanItems = when (val s = scanState.value) {
+        val allScanItems = when (val s = scanState.value) {
             is WifiScanState.Success -> s.items
             is WifiScanState.Throttled -> s.items
             else -> emptyList()
         }.filter { it.ssid.isNotBlank() }
 
-        if (scanItems.isEmpty()) {
+        if (allScanItems.isEmpty()) {
             _sequentialTestMessage.value = "Daftar Wi-Fi kosong. Silakan scan terlebih dahulu."
             scanner.startScan()
             sendSnackbar("Daftar Wi-Fi kosong. Memulai scan otomatis...")
+            return
+        }
+
+        val unrecordedKeys = allScanItems.map { it.bssid.ifBlank { it.ssid } }.filter { it.isNotBlank() && it !in seenRouterKeys }
+        if (unrecordedKeys.isNotEmpty()) {
+            seenRouterKeys.addAll(unrecordedKeys)
+            _selectedRouterBssids.update { it + unrecordedKeys }
+        }
+
+        val selectedSet = _selectedRouterBssids.value
+        val scanItems = allScanItems.filter { selectedSet.contains(it.bssid.ifBlank { it.ssid }) }
+
+        if (scanItems.isEmpty()) {
+            _sequentialTestMessage.value = "Pilih minimal 1 router lab yang dicentang untuk diuji."
+            sendSnackbar("Pilih minimal 1 router lab yang dicentang untuk diuji.")
             return
         }
 
@@ -377,11 +437,11 @@ class AroundCheckViewModel(
                 }
                 if (!isActive) break
 
-                // Pre-flight check: jika perangkat sedang terhubung ke router ini, reset koneksi agar pengujian murni
+                // Pre-flight check: jika perangkat sedang terhubung ke router ini via OS, lewati untuk mencegah false alarm
                 if (connector.isCurrentlyConnectedTo(candidate.ssid, candidate.bssid)) {
-                    _sequentialTestMessage.value = "Perangkat sedang terhubung ke ${candidate.ssid}. Mengabaikan koneksi lama..."
-                    connector.cancel()
+                    _sequentialTestMessage.value = "BFS [${index + 1}/${scanItems.size}]: ${candidate.ssid} dilewati (perangkat sudah terhubung via OS)."
                     delay(500L)
+                    continue
                 }
 
                 _sequentialTestMessage.value = "BFS [${index + 1}/${scanItems.size}]: Menguji ${candidate.ssid}..."
@@ -484,9 +544,10 @@ class AroundCheckViewModel(
         traversalJob?.cancel()
         traversalJob = viewModelScope.launch(dispatcher) {
             if (connector.isCurrentlyConnectedTo(target.ssid, target.bssid)) {
-                _sequentialTestMessage.value = "Perangkat sedang terhubung ke ${target.ssid}. Melepaskan koneksi untuk pengujian bersih..."
-                connector.cancel()
-                delay(500L)
+                _isSequentialTesting.value = false
+                _sequentialTestMessage.value = "Ponsel Anda saat ini terhubung ke ${target.ssid} di Pengaturan OS. Pilih 'Lupakan Jaringan' (Forget Network) di Pengaturan Wi-Fi Android untuk menguji daftar passphrase secara objektif tanpa false alarm."
+                sendSnackbar("Ponsel sedang terhubung ke ${target.ssid}. Lupakan jaringan di pengaturan terlebih dahulu.")
+                return@launch
             }
 
             var consecutiveFailures = 0
@@ -575,16 +636,31 @@ class AroundCheckViewModel(
     fun startHybridTraversal() {
         if (_isSequentialTesting.value) return
 
-        val scanItems = when (val s = scanState.value) {
+        val allScanItems = when (val s = scanState.value) {
             is WifiScanState.Success -> s.items
             is WifiScanState.Throttled -> s.items
             else -> emptyList()
         }.filter { it.ssid.isNotBlank() }
 
-        if (scanItems.isEmpty()) {
+        if (allScanItems.isEmpty()) {
             _sequentialTestMessage.value = "Daftar Wi-Fi kosong. Silakan scan terlebih dahulu."
             scanner.startScan()
             sendSnackbar("Daftar Wi-Fi kosong. Memulai scan otomatis...")
+            return
+        }
+
+        val unrecordedKeys = allScanItems.map { it.bssid.ifBlank { it.ssid } }.filter { it.isNotBlank() && it !in seenRouterKeys }
+        if (unrecordedKeys.isNotEmpty()) {
+            seenRouterKeys.addAll(unrecordedKeys)
+            _selectedRouterBssids.update { it + unrecordedKeys }
+        }
+
+        val selectedSet = _selectedRouterBssids.value
+        val scanItems = allScanItems.filter { selectedSet.contains(it.bssid.ifBlank { it.ssid }) }
+
+        if (scanItems.isEmpty()) {
+            _sequentialTestMessage.value = "Pilih minimal 1 router lab yang dicentang untuk diuji."
+            sendSnackbar("Pilih minimal 1 router lab yang dicentang untuk diuji.")
             return
         }
 
@@ -628,11 +704,13 @@ class AroundCheckViewModel(
                     continue
                 }
 
-                // Pre-flight check: Putuskan koneksi jika perangkat sedang terhubung ke router target
+                // Pre-flight check: Jika perangkat sedang terhubung ke router target via OS, lewati untuk mencegah false alarm
                 if (connector.isCurrentlyConnectedTo(router.ssid, router.bssid)) {
-                    _sequentialTestMessage.value = "Perangkat sedang terhubung ke ${router.ssid}. Melepaskan koneksi untuk pengujian bersih..."
-                    connector.cancel()
-                    delay(500L)
+                    _hybridRouterStatuses.value = _hybridRouterStatuses.value + (routerKey to HybridRouterStatus.AlreadyConnectedViaOS())
+                    _sequentialTestMessage.value = "Hybrid [${routerIndex + 1}/${scanItems.size}]: ${router.ssid} saat ini terhubung di OS Android. Dilewati untuk mencegah false alarm."
+                    sendSnackbar("Lewati ${router.ssid}: Sudah terhubung di OS")
+                    delay(1000L)
+                    continue
                 }
 
                 // 3. Uji DFS pada router ini

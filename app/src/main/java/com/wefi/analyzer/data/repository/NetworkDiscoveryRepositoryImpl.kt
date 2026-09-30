@@ -17,18 +17,20 @@ import com.wefi.analyzer.domain.model.ServiceInfo
 import com.wefi.analyzer.domain.model.SubnetInfo
 import com.wefi.analyzer.domain.repository.NetworkDiscoveryRepository
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.coroutines.resume
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
@@ -194,59 +196,60 @@ class NetworkDiscoveryRepositoryImpl(
      * Fitur A: Ping Sweep dengan Hybrid Probe (ICMP echo fallback TCP connect).
      * Android non-root tidak mendukung raw ICMP socket, sehingga digunakan InetAddress.isReachable()
      * yang otomatis fallback ke TCP port 80/443/554/22.
+     * Menggunakan channelFlow tanpa blocking Head-of-Line sehingga host aktif langsung di-emit saat merespons.
      * Concurrency limit: 32 parallel coroutines.
      */
-    override fun pingSweep(subnet: SubnetInfo): Flow<DiscoveredHost> = flow {
+    override fun pingSweep(subnet: SubnetInfo): Flow<DiscoveredHost> = channelFlow {
         val semaphore = Semaphore(32)
         throttler.resetCircuitBreaker()
 
         // Prioritaskan Gateway pertama kali jika ada
         val prioritizedHosts = subnet.hostsToScan.sortedByDescending { it == subnet.gatewayIp }
 
-        coroutineScope {
-            val deferreds = prioritizedHosts.map { hostIp ->
-                async(Dispatchers.IO) {
-                    semaphore.withPermit {
-                        // Rate limiter pacing (maksimal 200 pkt/detik)
-                        throttler.throttlePacket()
+        prioritizedHosts.forEach { hostIp ->
+            launch(Dispatchers.IO) {
+                semaphore.withPermit {
+                    // Rate limiter pacing (maksimal 200 pkt/detik)
+                    throttler.throttlePacket()
 
-                        val isGateway = (hostIp == subnet.gatewayIp)
-                        val startTime = System.currentTimeMillis()
-                        var isAlive = false
+                    val isGateway = (hostIp == subnet.gatewayIp)
+                    val startTime = System.currentTimeMillis()
+                    var isAlive = false
 
-                        try {
-                            val inet = InetAddress.getByName(hostIp)
-                            // 1. Coba isReachable
-                            isAlive = inet.isReachable(300)
-                        } catch (ignored: Exception) {
-                        }
+                    try {
+                        val inet = InetAddress.getByName(hostIp)
+                        // 1. Coba isReachable
+                        isAlive = inet.isReachable(300)
+                    } catch (ignored: Exception) {
+                    }
 
-                        // 2. Fallback TCP probe jika isReachable bernilai false (sangat umum di Android)
-                        if (!isAlive) {
-                            val probePorts = intArrayOf(80, 554, 443, 22, 8000)
-                            for (p in probePorts) {
-                                try {
-                                    Socket().use { socket ->
-                                        socket.connect(InetSocketAddress(hostIp, p), 200)
-                                        isAlive = true
-                                    }
-                                } catch (e: Exception) {
-                                    // Jika respon Connection Refused (RST packet), host tetap hidup!
-                                    if (e.message?.contains("refused", ignoreCase = true) == true) {
-                                        isAlive = true
-                                    }
+                    // 2. Fallback TCP probe jika isReachable bernilai false (sangat umum di Android)
+                    if (!isAlive) {
+                        val probePorts = intArrayOf(80, 554, 443, 22, 8000)
+                        for (p in probePorts) {
+                            try {
+                                Socket().use { socket ->
+                                    socket.connect(InetSocketAddress(hostIp, p), 200)
+                                    isAlive = true
                                 }
-                                if (isAlive) break
+                            } catch (e: Exception) {
+                                // Jika respon Connection Refused (RST packet), host tetap hidup!
+                                if (e.message?.contains("refused", ignoreCase = true) == true) {
+                                    isAlive = true
+                                }
                             }
+                            if (isAlive) break
                         }
+                    }
 
-                        val duration = System.currentTimeMillis() - startTime
-                        throttler.recordProbeResult(isAlive)
+                    val duration = System.currentTimeMillis() - startTime
+                    throttler.recordProbeResult(isAlive)
 
-                        if (isAlive) {
-                            throttler.recordHostScanned(hostIp)
-                            val mac = readMacFromArp(hostIp)
-                            val vendor = if (mac != null) lookupVendor(mac) else "Tidak Diketahui"
+                    if (isAlive) {
+                        throttler.recordHostScanned(hostIp)
+                        val mac = readMacFromArp(hostIp)
+                        val vendor = if (mac != null) lookupVendor(mac) else "Tidak Diketahui"
+                        send(
                             DiscoveredHost(
                                 ip = hostIp,
                                 macAddress = mac,
@@ -254,17 +257,8 @@ class NetworkDiscoveryRepositoryImpl(
                                 responseTimeMs = duration.coerceAtLeast(1L),
                                 isGateway = isGateway
                             )
-                        } else {
-                            null
-                        }
+                        )
                     }
-                }
-            }
-
-            for (deferred in deferreds) {
-                val host = deferred.await()
-                if (host != null) {
-                    emit(host)
                 }
             }
         }
@@ -272,53 +266,51 @@ class NetworkDiscoveryRepositoryImpl(
 
     /**
      * Fitur B: TCP Connect Port Scan (Bukan SYN scan untuk kepatuhan non-root).
+     * Menggunakan channelFlow sehingga hasil port langsung di-emit saat selesai tanpa menunggu port lain.
      * Timeout per-port 500ms, concurrency limit 64 worker.
      */
-    override fun scanPorts(hostIp: String, ports: List<Int>): Flow<PortResult> = flow {
+    override fun scanPorts(hostIp: String, ports: List<Int>): Flow<PortResult> = channelFlow {
         val semaphore = Semaphore(64)
 
-        coroutineScope {
-            val deferreds = ports.map { port ->
-                async(Dispatchers.IO) {
-                    semaphore.withPermit {
-                        throttler.throttlePacket()
-                        val startTime = System.currentTimeMillis()
-                        val serviceGuess = getStaticServiceGuess(port)
+        ports.forEach { port ->
+            launch(Dispatchers.IO) {
+                semaphore.withPermit {
+                    throttler.throttlePacket()
+                    val startTime = System.currentTimeMillis()
+                    val serviceGuess = getStaticServiceGuess(port)
 
-                        var status = PortStatus.TIMEOUT
-                        try {
-                            Socket().use { socket ->
-                                socket.connect(InetSocketAddress(hostIp, port), 500)
-                                status = PortStatus.OPEN
-                            }
-                        } catch (ste: SocketTimeoutException) {
-                            status = PortStatus.TIMEOUT
-                        } catch (e: Exception) {
-                            status = if (e.message?.contains("refused", ignoreCase = true) == true) {
-                                PortStatus.CLOSED
-                            } else {
-                                PortStatus.TIMEOUT
-                            }
+                    var status = PortStatus.TIMEOUT
+                    try {
+                        Socket().use { socket ->
+                            socket.connect(InetSocketAddress(hostIp, port), 500)
+                            status = PortStatus.OPEN
                         }
-                        val duration = System.currentTimeMillis() - startTime
+                    } catch (ste: SocketTimeoutException) {
+                        status = PortStatus.TIMEOUT
+                    } catch (e: Exception) {
+                        status = if (e.message?.contains("refused", ignoreCase = true) == true) {
+                            PortStatus.CLOSED
+                        } else {
+                            PortStatus.TIMEOUT
+                        }
+                    }
+                    val duration = System.currentTimeMillis() - startTime
+                    send(
                         PortResult(
                             port = port,
                             status = status,
                             serviceName = serviceGuess,
                             responseTimeMs = duration
                         )
-                    }
+                    )
                 }
-            }
-
-            for (deferred in deferreds) {
-                emit(deferred.await())
             }
         }
     }.flowOn(Dispatchers.IO)
 
     /**
      * Fitur C: mDNS Discovery via Android NsdManager resmi.
+     * Menggunakan antrean pekerja sekuensial untuk resolveService guna mencegah konkurensi FAILURE_ALREADY_ACTIVE (code 3).
      */
     override fun discoverMdns(timeoutMs: Long): Flow<ServiceInfo> = callbackFlow {
         if (nsdManager == null) {
@@ -328,6 +320,51 @@ class NetworkDiscoveryRepositoryImpl(
 
         val serviceTypes = listOf("_http._tcp.", "_rtsp._tcp.", "_onvif._tcp.", "_workstation._tcp.")
         val listeners = mutableListOf<NsdManager.DiscoveryListener>()
+        val resolveChannel = Channel<NsdServiceInfo>(Channel.UNLIMITED)
+
+        // Coroutine pekerja sekuensial untuk resolveService: mencegah FAILURE_ALREADY_ACTIVE (code 3)
+        val resolveJob = launch(Dispatchers.IO) {
+            for (serviceInfo in resolveChannel) {
+                try {
+                    withTimeoutOrNull(2500L) {
+                        suspendCancellableCoroutine<Unit> { cont ->
+                            try {
+                                nsdManager.resolveService(serviceInfo, object : NsdManager.ResolveListener {
+                                    override fun onResolveFailed(serviceInfo: NsdServiceInfo?, errorCode: Int) {
+                                        Log.w(tag, "mDNS resolve failed: code $errorCode")
+                                        if (cont.isActive) cont.resume(Unit)
+                                    }
+
+                                    override fun onServiceResolved(resolvedInfo: NsdServiceInfo?) {
+                                        val host = resolvedInfo?.host?.hostAddress
+                                        val port = resolvedInfo?.port ?: 0
+                                        val name = resolvedInfo?.serviceName ?: "Unknown Service"
+                                        if (host != null) {
+                                            trySend(
+                                                ServiceInfo(
+                                                    serviceName = name,
+                                                    serviceType = resolvedInfo.serviceType ?: "",
+                                                    host = host,
+                                                    ip = host,
+                                                    port = port,
+                                                    source = "mDNS"
+                                                )
+                                            )
+                                        }
+                                        if (cont.isActive) cont.resume(Unit)
+                                    }
+                                })
+                            } catch (e: Exception) {
+                                Log.w(tag, "Exception calling resolveService: ${e.message}")
+                                if (cont.isActive) cont.resume(Unit)
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(tag, "Timeout / error resolving mDNS service: ${e.message}")
+                }
+            }
+        }
 
         serviceTypes.forEach { serviceType ->
             val listener = object : NsdManager.DiscoveryListener {
@@ -345,29 +382,7 @@ class NetworkDiscoveryRepositoryImpl(
 
                 override fun onServiceFound(serviceInfo: NsdServiceInfo?) {
                     if (serviceInfo == null) return
-                    try {
-                        nsdManager.resolveService(serviceInfo, object : NsdManager.ResolveListener {
-                            override fun onResolveFailed(serviceInfo: NsdServiceInfo?, errorCode: Int) {}
-
-                            override fun onServiceResolved(resolvedInfo: NsdServiceInfo?) {
-                                val host = resolvedInfo?.host?.hostAddress ?: return
-                                val port = resolvedInfo.port
-                                val name = resolvedInfo.serviceName ?: "Unknown Service"
-                                trySend(
-                                    ServiceInfo(
-                                        serviceName = name,
-                                        serviceType = resolvedInfo.serviceType ?: serviceType,
-                                        host = host,
-                                        ip = host,
-                                        port = port,
-                                        source = "mDNS"
-                                    )
-                                )
-                            }
-                        })
-                    } catch (e: Exception) {
-                        Log.w(tag, "Gagal resolve service mDNS: ${e.message}")
-                    }
+                    resolveChannel.trySend(serviceInfo)
                 }
 
                 override fun onServiceLost(serviceInfo: NsdServiceInfo?) {}
@@ -387,6 +402,8 @@ class NetworkDiscoveryRepositoryImpl(
                 nsdManager.stopServiceDiscovery(listener)
             } catch (ignored: Exception) {}
         }
+        resolveChannel.close()
+        resolveJob.cancel()
         close()
 
         awaitClose {
@@ -395,6 +412,8 @@ class NetworkDiscoveryRepositoryImpl(
                     nsdManager.stopServiceDiscovery(listener)
                 } catch (ignored: Exception) {}
             }
+            resolveChannel.close()
+            resolveJob.cancel()
         }
     }.flowOn(Dispatchers.IO)
 

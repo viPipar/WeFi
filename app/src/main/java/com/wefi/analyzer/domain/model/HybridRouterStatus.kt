@@ -6,4 +6,5 @@ sealed interface HybridRouterStatus {
     data class Found(val workingPassword: String) : HybridRouterStatus
     data class NotFound(val testedCount: Int) : HybridRouterStatus
     data class VerifiedFromVault(val workingPassword: String) : HybridRouterStatus
+    data class AlreadyConnectedViaOS(val message: String = "Terhubung di Pengaturan OS (Lupakan jaringan untuk audit)") : HybridRouterStatus
 }

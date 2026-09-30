@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 class NetworkDiscoveryViewModel(
@@ -29,22 +30,24 @@ class NetworkDiscoveryViewModel(
         if (_uiState.value.isScanning) return
 
         scanJob?.cancel()
+        _uiState.update {
+            it.copy(
+                phase = ScanPhase.DISCOVERING_SUBNET,
+                isScanning = true,
+                progress = 0.05f,
+                statusMessage = "Mendeteksi konfigurasi subnet laboratorium...",
+                hosts = emptyList(),
+                errorMessage = null,
+                exportedReportText = null,
+                report = null
+            )
+        }
+
         scanJob = viewModelScope.launch {
             val startTime = System.currentTimeMillis()
-            _uiState.update {
-                it.copy(
-                    phase = ScanPhase.DISCOVERING_SUBNET,
-                    isScanning = true,
-                    progress = 0.05f,
-                    statusMessage = "Mendeteksi konfigurasi subnet laboratorium...",
-                    hosts = emptyList(),
-                    errorMessage = null,
-                    exportedReportText = null,
-                    report = null
-                )
-            }
 
             val subnet = repository.getSubnetInfo()
+            if (!isActive) return@launch
             if (subnet == null) {
                 _uiState.update {
                     it.copy(
@@ -98,11 +101,16 @@ class NetworkDiscoveryViewModel(
                     }
                 }
             } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 // Ignore sweep interruption
             }
 
+            if (!isActive) return@launch
+
             ssdpJob.await()
             mdnsJob.await()
+
+            if (!isActive) return@launch
 
             // Gabungkan host dari SSDP dan mDNS jika belum tercatat di sweep
             discoveredServices.forEach { srv ->
@@ -162,11 +170,24 @@ class NetworkDiscoveryViewModel(
                     repository.scanPorts(host.ip, commonPorts).collect { portResult ->
                         if (portResult.status == PortStatus.OPEN) {
                             openPorts.add(portResult)
+                            _uiState.update { state ->
+                                val updatedList = state.hosts.map { h ->
+                                    if (h.ip == host.ip) h.copy(openPorts = openPorts.toList()) else h
+                                }
+                                state.copy(hosts = updatedList)
+                            }
                         }
                     }
                 } catch (ignored: Exception) {}
 
-                hostsWithPorts.add(host.copy(openPorts = openPorts))
+                val updatedHost = host.copy(openPorts = openPorts)
+                hostsWithPorts.add(updatedHost)
+                _uiState.update { state ->
+                    val updatedList = state.hosts.map { h ->
+                        if (h.ip == host.ip) updatedHost else h
+                    }
+                    state.copy(hosts = updatedList)
+                }
             }
 
             // 4. Banner Grabbing & CVE Matching (Read-Only)
@@ -179,7 +200,15 @@ class NetworkDiscoveryViewModel(
             }
 
             val fullyAuditedHosts = mutableListOf<DiscoveredHost>()
-            hostsWithPorts.forEach { host ->
+            hostsWithPorts.forEachIndexed { index, host ->
+                _uiState.update {
+                    it.copy(
+                        currentHostScanned = host.ip,
+                        progress = 0.85f + (0.12f * (index.toFloat() / hostsWithPorts.size)),
+                        statusMessage = "Mengidentifikasi servis & CVE pada ${host.ip} (${index + 1}/${hostsWithPorts.size})..."
+                    )
+                }
+
                 val primaryPort = host.openPorts.firstOrNull { it.port in listOf(554, 80, 8080, 3702, 8000) }?.port ?: 80
                 val banner = try {
                     repository.grabBanner(host.ip, primaryPort)
@@ -199,17 +228,26 @@ class NetworkDiscoveryViewModel(
                 val firmwareToMatch = banner?.onvifFirmware ?: ""
                 val cveMatches = repository.matchCve(vendorToMatch, modelToMatch, firmwareToMatch)
 
-                fullyAuditedHosts.add(
-                    host.copy(
-                        banner = banner,
-                        probableDeviceType = deviceType,
-                        cveMatches = cveMatches
-                    )
+                val auditedHost = host.copy(
+                    banner = banner,
+                    probableDeviceType = deviceType,
+                    cveMatches = cveMatches
                 )
+                fullyAuditedHosts.add(auditedHost)
+                _uiState.update { state ->
+                    val updatedList = state.hosts.map { h ->
+                        if (h.ip == host.ip) auditedHost else h
+                    }
+                    state.copy(hosts = updatedList)
+                }
             }
+
+            if (!isActive) return@launch
 
             val duration = System.currentTimeMillis() - startTime
             val finalReport = repository.generateReport(fullyAuditedHosts, duration, subnet.baseIp)
+
+            if (!isActive) return@launch
 
             _uiState.update {
                 it.copy(
@@ -225,7 +263,7 @@ class NetworkDiscoveryViewModel(
     }
 
     fun cancelDiscovery() {
-        if (_uiState.value.isScanning) {
+        if (_uiState.value.isScanning || scanJob?.isActive == true) {
             scanJob?.cancel()
             _uiState.update {
                 it.copy(

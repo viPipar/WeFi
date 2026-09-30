@@ -56,6 +56,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -81,6 +83,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -153,6 +156,7 @@ fun AroundCheckScreen(
     val showCircuitBreakerDialog by viewModel.showCircuitBreakerDialog.collectAsState()
     val verifiedRouters by viewModel.verifiedRouters.collectAsState()
     val isControlPanelExpanded by viewModel.isControlPanelExpanded.collectAsState()
+    val selectedRouterBssids by viewModel.selectedRouterBssids.collectAsState()
 
     val snackbarHostState = remember { SnackbarHostState() }
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -1729,6 +1733,62 @@ fun AroundCheckScreen(
                     }
                 }
             } else {
+                // QoL Selection Toolbar (Hanya muncul pada Mode BFS & Hybrid)
+                if (scanItems.isNotEmpty() && selectedMode != AroundCheckMode.DFS) {
+                    val selectedCount = scanItems.count { selectedRouterBssids.contains(it.bssid.ifBlank { it.ssid }) }
+                    val isAllSelected = selectedCount == scanItems.size && scanItems.isNotEmpty()
+
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 6.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Rounded.PlaylistAddCheck,
+                                    contentDescription = null,
+                                    tint = BlynkBlue,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Target Audit: $selectedCount dari ${scanItems.size} router",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+
+                            TextButton(
+                                onClick = {
+                                    if (isAllSelected) {
+                                        viewModel.deselectAllRouters()
+                                    } else {
+                                        viewModel.selectAllRouters()
+                                    }
+                                },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                            ) {
+                                Text(
+                                    text = if (isAllSelected) "Batal Semua" else "Pilih Semua",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = BlynkBlue
+                                )
+                            }
+                        }
+                    }
+                }
+
                 LazyColumn(
                     modifier = Modifier
                         .weight(1f)
@@ -1740,12 +1800,14 @@ fun AroundCheckScreen(
                         items = scanItems,
                         key = { it.bssid.ifBlank { it.ssid } }
                     ) { item ->
+                        val itemKey = item.bssid.ifBlank { item.ssid }
                         val isTarget = connectState.targetSsid == item.ssid
                         // Hanya tampilkan tombol countdown jika kartu ini adalah target aktif / yang baru saja dicoba
                         val cooldownSec = if (isTarget) viewModel.getRemainingCooldownForSsid(item.ssid) else 0
                         val isWaitingApproval = viewModel.isItemWaitingApproval(item.ssid)
 
                         val isDfsTarget = (selectedMode == AroundCheckMode.DFS && dfsTargetItem?.bssid == item.bssid)
+                        val isSelected = selectedRouterBssids.contains(itemKey)
                         val verifiedItem = verifiedRouters.firstOrNull {
                             if (item.bssid.isNotBlank() && it.bssid.isNotBlank()) {
                                 it.bssid.equals(item.bssid, ignoreCase = true)
@@ -1761,7 +1823,10 @@ fun AroundCheckScreen(
                             isWaitingApproval = isWaitingApproval,
                             isDfsMode = selectedMode == AroundCheckMode.DFS,
                             isDfsTarget = isDfsTarget,
-                            hybridStatus = hybridRouterStatuses[item.bssid.ifBlank { item.ssid }],
+                            isSelectable = selectedMode != AroundCheckMode.DFS,
+                            isSelected = isSelected,
+                            onToggleSelect = { viewModel.toggleRouterSelection(itemKey) },
+                            hybridStatus = hybridRouterStatuses[itemKey],
                             isVerified = verifiedItem != null,
                             verifiedPassword = verifiedItem?.workingPassword,
                             onSelectDfsTarget = { viewModel.selectDfsTargetItem(item) },
@@ -1832,6 +1897,9 @@ private fun WifiScanItemCard(
     isWaitingApproval: Boolean,
     isDfsMode: Boolean = false,
     isDfsTarget: Boolean = false,
+    isSelectable: Boolean = false,
+    isSelected: Boolean = true,
+    onToggleSelect: (() -> Unit)? = null,
     hybridStatus: HybridRouterStatus? = null,
     isVerified: Boolean = false,
     verifiedPassword: String? = null,
@@ -1848,23 +1916,32 @@ private fun WifiScanItemCard(
 
     Surface(
         shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surface,
+        color = if (isSelectable && !isSelected) MaterialTheme.colorScheme.surface.copy(alpha = 0.70f) else MaterialTheme.colorScheme.surface,
         border = BorderStroke(
             width = if (isDfsTarget || hybridStatus is HybridRouterStatus.Testing) 2.dp else if (isTarget) 1.5.dp else 1.dp,
-            color = if (isDfsTarget || hybridStatus is HybridRouterStatus.Testing) BlynkBlue else if (isTarget) BlynkBlue else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+            color = if (isDfsTarget || hybridStatus is HybridRouterStatus.Testing) BlynkBlue 
+                    else if (isTarget) BlynkBlue 
+                    else if (isSelectable && !isSelected) MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)
+                    else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
         ),
-        shadowElevation = if (isDfsTarget || isTarget || hybridStatus is HybridRouterStatus.Testing) 3.dp else 1.dp,
+        shadowElevation = if (isSelectable && !isSelected) 0.dp else if (isDfsTarget || isTarget || hybridStatus is HybridRouterStatus.Testing) 3.dp else 1.dp,
         modifier = Modifier
             .fillMaxWidth()
             .then(
                 if (isDfsMode) {
                     Modifier.clickable { onSelectDfsTarget?.invoke() }
+                } else if (isSelectable) {
+                    Modifier.clickable { onToggleSelect?.invoke() }
                 } else {
                     Modifier
                 }
             )
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
+        Column(
+            modifier = Modifier
+                .padding(14.dp)
+                .then(if (isSelectable && !isSelected) Modifier.alpha(0.65f) else Modifier)
+        ) {
             // Row Atas: Ikon Sinyal + Nama SSID + Badges
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1886,6 +1963,7 @@ private fun WifiScanItemCard(
                                     status == WifiConnectStatus.Connected -> QualityGreen.copy(alpha = 0.15f)
                                     status == WifiConnectStatus.WaitingApproval -> QualityAmber.copy(alpha = 0.15f)
                                     status == WifiConnectStatus.Rejected || status == WifiConnectStatus.Failed -> QualityRed.copy(alpha = 0.15f)
+                                    hybridStatus is HybridRouterStatus.AlreadyConnectedViaOS -> QualityAmber.copy(alpha = 0.15f)
                                     hybridStatus is HybridRouterStatus.NotFound -> Color(0xFFF1F5F9)
                                     else -> BlynkBlueTint
                                 }
@@ -1898,6 +1976,7 @@ private fun WifiScanItemCard(
                                 isVerified -> Icons.Rounded.CheckCircle
                                 status == WifiConnectStatus.Connected -> Icons.Rounded.CheckCircle
                                 status == WifiConnectStatus.Rejected || status == WifiConnectStatus.Failed -> Icons.Rounded.Close
+                                hybridStatus is HybridRouterStatus.AlreadyConnectedViaOS -> Icons.Rounded.Warning
                                 hybridStatus is HybridRouterStatus.NotFound -> Icons.Rounded.RemoveCircleOutline
                                 else -> Icons.Rounded.Wifi
                             },
@@ -1908,6 +1987,7 @@ private fun WifiScanItemCard(
                                 status == WifiConnectStatus.Connected -> QualityGreen
                                 status == WifiConnectStatus.WaitingApproval -> QualityAmber
                                 status == WifiConnectStatus.Rejected || status == WifiConnectStatus.Failed -> QualityRed
+                                hybridStatus is HybridRouterStatus.AlreadyConnectedViaOS -> QualityAmber
                                 hybridStatus is HybridRouterStatus.NotFound -> Color(0xFF64748B)
                                 else -> BlynkBlue
                             },
@@ -2037,6 +2117,20 @@ private fun WifiScanItemCard(
                                 else -> Color(0xFF4B5563)
                             },
                             modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                        )
+                    }
+
+                    // Checkbox Seleksi Router Lab (Mode BFS & Hybrid)
+                    if (isSelectable) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Checkbox(
+                            checked = isSelected,
+                            onCheckedChange = { onToggleSelect?.invoke() },
+                            colors = CheckboxDefaults.colors(
+                                checkedColor = BlynkBlue,
+                                uncheckedColor = MaterialTheme.colorScheme.outline
+                            ),
+                            modifier = Modifier.size(22.dp)
                         )
                     }
                 }
@@ -2238,6 +2332,35 @@ private fun WifiScanItemCard(
                                     fontSize = 11.5.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = BlynkBlueDark
+                                )
+                            }
+                        }
+                    }
+                    is HybridRouterStatus.AlreadyConnectedViaOS -> {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFFFEF3C7),
+                            border = BorderStroke(1.dp, Color(0xFFFCD34D)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Warning,
+                                    contentDescription = null,
+                                    tint = Color(0xFFB45309),
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = hybridStatus.message,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = Color(0xFFB45309)
                                 )
                             }
                         }

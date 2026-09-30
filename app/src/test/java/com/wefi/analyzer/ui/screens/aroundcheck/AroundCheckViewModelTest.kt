@@ -27,6 +27,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -567,7 +568,7 @@ class AroundCheckViewModelTest {
     }
 
     @Test
-    fun startHybridTraversal_passesBssidAndDisconnectsPreFlight_whenAlreadyConnected() = runTest(testDispatcher) {
+    fun startHybridTraversal_skipsRouterAndSetsAlreadyConnectedStatus_whenAlreadyConnected() = runTest(testDispatcher) {
         val routerA = WifiScanItem("Router-A", "11:22:33:44:55:01", -50, WifiSecurityType.WPA2, 2412, 1)
         fakeScanner.setScanItems(listOf(routerA))
         viewModel.setHybridCsvInput("passOne11;passTwo22")
@@ -577,12 +578,13 @@ class AroundCheckViewModelTest {
         testScheduler.advanceTimeBy(1500L)
         testScheduler.runCurrent()
 
-        assertTrue("cancel harus dipanggil untuk pre-flight disconnect", fakeConnector.cancelCalled)
-        assertEquals("11:22:33:44:55:01", fakeConnector.lastConnectBssid)
+        val statusA = viewModel.hybridRouterStatuses.value["11:22:33:44:55:01"]
+        assertTrue("Status harus AlreadyConnectedViaOS untuk mencegah false alarm", statusA is HybridRouterStatus.AlreadyConnectedViaOS)
+        assertNull("Tidak boleh mencoba connect dengan password palsu saat sudah terhubung di OS", fakeConnector.lastConnectBssid)
     }
 
     @Test
-    fun startDfsTraversal_passesBssidAndDisconnectsPreFlight_whenAlreadyConnected() = runTest(testDispatcher) {
+    fun startDfsTraversal_abortsAndWarnsUser_whenAlreadyConnected() = runTest(testDispatcher) {
         val target = WifiScanItem("Router-A", "11:22:33:44:55:01", -50, WifiSecurityType.WPA2, 2412, 1)
         viewModel.selectDfsTargetItem(target)
         viewModel.setDfsCsvInput("passOne11;passTwo22")
@@ -592,8 +594,9 @@ class AroundCheckViewModelTest {
         testScheduler.advanceTimeBy(1500L)
         testScheduler.runCurrent()
 
-        assertTrue("cancel harus dipanggil untuk pre-flight disconnect pada DFS", fakeConnector.cancelCalled)
-        assertEquals("11:22:33:44:55:01", fakeConnector.lastConnectBssid)
+        assertFalse("Traversal harus dibatalkan/berhenti saat perangkat sudah terhubung di OS", viewModel.isSequentialTesting.value)
+        assertTrue("Harus memberikan pesan edukasi Forget Network", viewModel.sequentialTestMessage.value.contains("Lupakan Jaringan"))
+        assertNull("Tidak boleh mencoba connect saat sudah terhubung di OS", fakeConnector.lastConnectBssid)
     }
 
     @Test
@@ -617,6 +620,120 @@ class AroundCheckViewModelTest {
         val status = viewModel.hybridRouterStatuses.value["11:22:33:44:55:01"]
         assertTrue("Status harus tetap Testing password pertama setelah cooldown", status is HybridRouterStatus.Testing)
         assertEquals(1, (status as HybridRouterStatus.Testing).currentPasswordIndex)
+    }
+
+    @Test
+    fun testToggleRouterSelection_addsAndRemovesRouter() = runTest(testDispatcher) {
+        val routerA = WifiScanItem("Router-A", "11:22:33:44:55:01", -50, WifiSecurityType.WPA2, 2412, 1)
+        fakeScanner.setScanItems(listOf(routerA))
+        testScheduler.advanceUntilIdle()
+
+        // Awalnya Router-A terpilih secara default
+        assertTrue(viewModel.selectedRouterBssids.value.contains("11:22:33:44:55:01"))
+
+        // Uncheck Router-A
+        viewModel.toggleRouterSelection("11:22:33:44:55:01")
+        assertFalse(viewModel.selectedRouterBssids.value.contains("11:22:33:44:55:01"))
+
+        // Check kembali Router-A
+        viewModel.toggleRouterSelection("11:22:33:44:55:01")
+        assertTrue(viewModel.selectedRouterBssids.value.contains("11:22:33:44:55:01"))
+    }
+
+    @Test
+    fun testSelectAllAndDeselectAllRouters() = runTest(testDispatcher) {
+        val routerA = WifiScanItem("Router-A", "11:22:33:44:55:01", -50, WifiSecurityType.WPA2, 2412, 1)
+        val routerB = WifiScanItem("Router-B", "11:22:33:44:55:02", -60, WifiSecurityType.WPA2, 2412, 1)
+        fakeScanner.setScanItems(listOf(routerA, routerB))
+        testScheduler.advanceUntilIdle()
+
+        assertEquals(2, viewModel.selectedRouterBssids.value.size)
+
+        // Batal Semua
+        viewModel.deselectAllRouters()
+        assertTrue(viewModel.selectedRouterBssids.value.isEmpty())
+
+        // Pilih Semua
+        viewModel.selectAllRouters()
+        assertEquals(2, viewModel.selectedRouterBssids.value.size)
+        assertTrue(viewModel.selectedRouterBssids.value.contains("11:22:33:44:55:01"))
+        assertTrue(viewModel.selectedRouterBssids.value.contains("11:22:33:44:55:02"))
+    }
+
+    @Test
+    fun startBfsTraversal_onlyTestsSelectedRouters() = runTest(testDispatcher) {
+        val routerA = WifiScanItem("Router-A", "11:22:33:44:55:01", -50, WifiSecurityType.WPA2, 2412, 1)
+        val routerB = WifiScanItem("Router-B", "11:22:33:44:55:02", -60, WifiSecurityType.WPA2, 2412, 1)
+        fakeScanner.setScanItems(listOf(routerA, routerB))
+        testScheduler.advanceUntilIdle()
+
+        // Uncheck Router-B, hanya Router-A yang diuji
+        viewModel.toggleRouterSelection("11:22:33:44:55:02")
+        viewModel.setTopPasswordInput("topSecret123")
+
+        viewModel.startBfsTraversal()
+        testScheduler.advanceUntilIdle()
+
+        // Pastikan hanya 1 router yang diuji
+        assertEquals(1, viewModel.traversalTotalCount.value)
+        assertEquals("Router-A", fakeConnector.lastConnectSsid)
+    }
+
+    @Test
+    fun startBfsTraversal_abortsWhenNoRoutersSelected() = runTest(testDispatcher) {
+        val routerA = WifiScanItem("Router-A", "11:22:33:44:55:01", -50, WifiSecurityType.WPA2, 2412, 1)
+        fakeScanner.setScanItems(listOf(routerA))
+        testScheduler.advanceUntilIdle()
+
+        viewModel.deselectAllRouters()
+        viewModel.setTopPasswordInput("topSecret123")
+
+        viewModel.startBfsTraversal()
+        testScheduler.advanceUntilIdle()
+
+        assertFalse(viewModel.isSequentialTesting.value)
+        assertTrue(viewModel.sequentialTestMessage.value.contains("Pilih minimal 1 router"))
+        assertNull(fakeConnector.lastConnectSsid)
+    }
+
+    @Test
+    fun startHybridTraversal_onlyTestsSelectedRouters() = runTest(testDispatcher) {
+        val routerA = WifiScanItem("Router-A", "11:22:33:44:55:01", -50, WifiSecurityType.WPA2, 2412, 1)
+        val routerB = WifiScanItem("Router-B", "11:22:33:44:55:02", -60, WifiSecurityType.WPA2, 2412, 1)
+        fakeScanner.setScanItems(listOf(routerA, routerB))
+        testScheduler.advanceUntilIdle()
+
+        // Uncheck Router-A, hanya Router-B yang diuji
+        viewModel.toggleRouterSelection("11:22:33:44:55:01")
+        viewModel.setHybridCsvInput("passOne11;passTwo22")
+
+        viewModel.startHybridTraversal()
+        testScheduler.advanceUntilIdle()
+
+        assertEquals(1, viewModel.traversalTotalCount.value)
+        val statusA = viewModel.hybridRouterStatuses.value["11:22:33:44:55:01"]
+        val statusB = viewModel.hybridRouterStatuses.value["11:22:33:44:55:02"]
+
+        // Router-A tidak pernah diuji
+        assertNull(statusA)
+        // Router-B masuk pengujian
+        assertNotNull(statusB)
+    }
+
+    @Test
+    fun startHybridTraversal_abortsWhenNoRoutersSelected() = runTest(testDispatcher) {
+        val routerA = WifiScanItem("Router-A", "11:22:33:44:55:01", -50, WifiSecurityType.WPA2, 2412, 1)
+        fakeScanner.setScanItems(listOf(routerA))
+        testScheduler.advanceUntilIdle()
+
+        viewModel.deselectAllRouters()
+        viewModel.setHybridCsvInput("passOne11;passTwo22")
+
+        viewModel.startHybridTraversal()
+        testScheduler.advanceUntilIdle()
+
+        assertFalse(viewModel.isSequentialTesting.value)
+        assertTrue(viewModel.sequentialTestMessage.value.contains("Pilih minimal 1 router"))
     }
 }
 
