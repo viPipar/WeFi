@@ -34,11 +34,11 @@
 - `DfsParseResult(validPasswords, skippedTooShortCount, duplicateCount)`
 - `DfsPasswordSanitizer.parse(rawInput: String): DfsParseResult`
 
-- [ ] **Step 1: Create domain model classes**
+- [x] **Step 1: Create domain model classes**
 
 Create `AroundCheckMode.kt`, `VerifiedLabRouter.kt`, and `DfsParseResult.kt`.
 
-- [ ] **Step 2: Write failing unit test for `DfsPasswordSanitizer`**
+- [x] **Step 2: Write failing unit test for `DfsPasswordSanitizer`**
 
 In `app/src/test/java/com/wefi/analyzer/domain/util/DfsPasswordSanitizerTest.kt`:
 ```kotlin
@@ -70,12 +70,12 @@ class DfsPasswordSanitizerTest {
 }
 ```
 
-- [ ] **Step 3: Run test to verify it fails**
+- [x] **Step 3: Run test to verify it fails**
 
 Run: `.\gradlew testDebugUnitTest --tests com.wefi.analyzer.domain.util.DfsPasswordSanitizerTest --no-daemon`
 Expected: FAIL (class not found).
 
-- [ ] **Step 4: Implement `DfsPasswordSanitizer`**
+- [x] **Step 4: Implement `DfsPasswordSanitizer`**
 
 In `app/src/main/java/com/wefi/analyzer/domain/util/DfsPasswordSanitizer.kt`:
 ```kotlin
@@ -117,12 +117,12 @@ object DfsPasswordSanitizer {
 }
 ```
 
-- [ ] **Step 5: Run unit tests to verify pass**
+- [x] **Step 5: Run unit tests to verify pass**
 
 Run: `.\gradlew testDebugUnitTest --tests com.wefi.analyzer.domain.util.DfsPasswordSanitizerTest --no-daemon`
 Expected: `BUILD SUCCESSFUL`, all tests pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add app/src/main/java/com/wefi/analyzer/domain/model/AroundCheckMode.kt \
@@ -154,26 +154,26 @@ interface VerifiedWifiStore {
 }
 ```
 
-- [ ] **Step 1: Define `VerifiedWifiStore` interface**
+- [x] **Step 1: Define `VerifiedWifiStore` interface**
 
 Create `app/src/main/java/com/wefi/analyzer/domain/repository/VerifiedWifiStore.kt`.
 
-- [ ] **Step 2: Write failing unit test for `VerifiedWifiStoreImpl`**
+- [x] **Step 2: Write failing unit test for `VerifiedWifiStoreImpl`**
 
 In `app/src/test/java/com/wefi/analyzer/data/repository/VerifiedWifiStoreImplTest.kt`:
 Test save, retrieve, anti-duplication, removal, and corrupted JSON resilience.
 
-- [ ] **Step 3: Implement `VerifiedWifiStoreImpl`**
+- [x] **Step 3: Implement `VerifiedWifiStoreImpl`**
 
 In `app/src/main/java/com/wefi/analyzer/data/repository/VerifiedWifiStoreImpl.kt`:
 Store JSON array in private SharedPreferences with in-memory caching in `MutableStateFlow`.
 
-- [ ] **Step 4: Run unit tests**
+- [x] **Step 4: Run unit tests**
 
 Run: `.\gradlew testDebugUnitTest --tests com.wefi.analyzer.data.repository.VerifiedWifiStoreImplTest --no-daemon`
 Expected: `BUILD SUCCESSFUL`, all tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add app/src/main/java/com/wefi/analyzer/domain/repository/VerifiedWifiStore.kt \
@@ -201,7 +201,7 @@ git commit -m "feat(vault): implement persistent verified wifi store with json s
 - `dismissGoalFound()`
 - `acknowledgeCircuitBreaker(continueTraversal: Boolean)`
 
-- [ ] **Step 1: Write unit tests for BFS & DFS in ViewModel**
+- [x] **Step 1: Write unit tests for BFS & DFS in ViewModel**
 
 In `app/src/test/java/com/wefi/analyzer/ui/screens/aroundcheck/AroundCheckViewModelTest.kt`:
 - Add test for `startDfsTraversal_iteratesPasswordsOnTargetRouter()`
@@ -209,16 +209,16 @@ In `app/src/test/java/com/wefi/analyzer/ui/screens/aroundcheck/AroundCheckViewMo
 - Add test for `startDfsTraversal_circuitBreakerAfter10ConsecutiveFailures()`
 - Add test for `startBfsTraversal_whenRouterMatches_savesToVault()`
 
-- [ ] **Step 2: Update `AroundCheckViewModel`**
+- [x] **Step 2: Update `AroundCheckViewModel`**
 
 Implement state flows, sanitizer integration, BFS traversal, DFS traversal with safe pacing (2-3s delay) and HAL quench (500ms delay), and vault persistence.
 
-- [ ] **Step 3: Run unit tests**
+- [x] **Step 3: Run unit tests**
 
 Run: `.\gradlew testDebugUnitTest --tests com.wefi.analyzer.ui.screens.aroundcheck.AroundCheckViewModelTest --no-daemon`
 Expected: `BUILD SUCCESSFUL`, all tests pass.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add app/src/main/java/com/wefi/analyzer/ui/screens/aroundcheck/AroundCheckViewModel.kt \
@@ -238,11 +238,11 @@ git commit -m "feat(aroundcheck): implement bfs and dfs traversal engine with la
 - Consumes: `AroundCheckViewModel` StateFlows
 - Produces: Modern Blynk UI with top segmented tab, dynamic BFS/DFS panels, live traversal progress bar, celebration card, and verified badges on Wi-Fi cards.
 
-- [ ] **Step 1: Wire `VerifiedWifiStoreImpl` into `MainActivity.kt`**
+- [x] **Step 1: Wire `VerifiedWifiStoreImpl` into `MainActivity.kt`**
 
 Pass `verifiedStore = VerifiedWifiStoreImpl(applicationContext)` to `AroundCheckViewModel`.
 
-- [ ] **Step 2: Update `AroundCheckScreen.kt`**
+- [x] **Step 2: Update `AroundCheckScreen.kt`**
 
 1. Top Segmented Control (`Mode BFS` vs `Mode DFS`).
 2. Mode BFS Panel: Single password + Search button.
@@ -252,12 +252,12 @@ Pass `verifiedStore = VerifiedWifiStoreImpl(applicationContext)` to `AroundCheck
 6. Wi-Fi Cards: Highlight border for DFS target; emerald green "TERVERIFIKASI" badge for verified routers.
 7. Circuit Breaker Dialog: Prompts user when 10 consecutive failures occur.
 
-- [ ] **Step 3: Verify Kotlin compilation**
+- [x] **Step 3: Verify Kotlin compilation**
 
 Run: `.\gradlew compileDebugKotlin --no-daemon`
 Expected: `BUILD SUCCESSFUL`
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add app/src/main/java/com/wefi/analyzer/ui/screens/aroundcheck/AroundCheckScreen.kt \
@@ -272,17 +272,17 @@ git commit -m "feat(ui): add bfs dfs segmented tabs, dfs panel, verified badge, 
 **Files:**
 - Test: All tests in `app/src/test`
 
-- [ ] **Step 1: Run all unit tests**
+- [x] **Step 1: Run all unit tests**
 
 Run: `.\gradlew testDebugUnitTest --no-daemon`
 Expected: 100% pass (28+ tests passing).
 
-- [ ] **Step 2: Assemble Debug APK**
+- [x] **Step 2: Assemble Debug APK**
 
 Run: `.\gradlew assembleDebug --no-daemon`
 Expected: `BUILD SUCCESSFUL`, `app-debug.apk` built.
 
-- [ ] **Step 3: Push changes to main**
+- [x] **Step 3: Push changes to main**
 
 ```bash
 git push origin main
