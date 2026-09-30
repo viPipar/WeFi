@@ -23,7 +23,8 @@ class WifiConnectorImplTest {
             context = null,
             wifiManager = null,
             connectivityManager = null,
-            mainDispatcher = testDispatcher
+            mainDispatcher = testDispatcher,
+            sdkInt = 29
         )
     }
 
@@ -57,5 +58,19 @@ class WifiConnectorImplTest {
         val check = connector.canConnect("Lab-SSID")
         assertTrue(check is ConnectCheckResult.Allowed)
         assertEquals(0, connector.remainingCooldownSeconds("Lab-SSID"))
+    }
+
+    @Test
+    fun connect_whenWpa2PasswordTooShort_failsImmediatelyWithoutCrashing() = runTest(testDispatcher) {
+        connector.connect("Lab-AP", "short", WifiSecurityType.WPA2)
+        assertEquals(WifiConnectStatus.Failed, connector.connectState.value.status)
+        assertTrue(connector.connectState.value.message.contains("8"))
+    }
+
+    @Test
+    fun connect_whenWepNetwork_failsWithDeprecatedMessage() = runTest(testDispatcher) {
+        connector.connect("Legacy-AP", "12345", WifiSecurityType.WEP)
+        assertEquals(WifiConnectStatus.Failed, connector.connectState.value.status)
+        assertTrue(connector.connectState.value.message.contains("WEP"))
     }
 }
