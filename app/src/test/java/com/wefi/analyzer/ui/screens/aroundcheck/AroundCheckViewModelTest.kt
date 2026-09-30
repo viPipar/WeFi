@@ -358,7 +358,20 @@ class AroundCheckViewModelTest {
         assertTrue(viewModel.isRouterVerified("00:11:22:33:44:77", "Bfs-AP"))
         assertEquals("topSecret123", viewModel.getVerifiedPassword("00:11:22:33:44:77", "Bfs-AP"))
     }
+
+    @Test
+    fun applyDfsPracticumTemplate_populatesDfsInputWith56PassphrasesAndParsesCorrectly() {
+        viewModel.applyDfsPracticumTemplate()
+
+        val parsed = viewModel.dfsParsedStats.value
+        assertEquals(56, parsed.validPasswords.size)
+        assertEquals(0, parsed.skippedTooShortCount)
+        assertEquals(0, parsed.duplicateCount)
+        assertTrue(viewModel.dfsCsvInput.value.contains("ilmukomputeripb"))
+        assertEquals("ilmukomputeripb", parsed.validPasswords.last())
+    }
 }
+
 
 private class FakeWifiScanner : WifiScanner {
     private val _scanState = MutableStateFlow<WifiScanState>(WifiScanState.Idle)

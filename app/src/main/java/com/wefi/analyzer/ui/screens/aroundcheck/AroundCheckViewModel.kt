@@ -248,6 +248,11 @@ class AroundCheckViewModel(
         _dfsParsedStats.value = DfsPasswordSanitizer.parse(input)
     }
 
+    fun applyDfsPracticumTemplate() {
+        setDfsCsvInput(DFS_PRACTICUM_TEMPLATE)
+        sendSnackbar("Template praktikum dimuat (56 kata sandi)")
+    }
+
     fun toggleDfsCsvVisibility() {
         _isDfsCsvVisible.value = !_isDfsCsvVisible.value
     }
@@ -485,5 +490,10 @@ class AroundCheckViewModel(
         traversalJob?.cancel()
         scanner.teardown()
         connector.teardown()
+    }
+
+    companion object {
+        const val DFS_PRACTICUM_TEMPLATE =
+            "12345678;123456789;1234567890;12345678910;Password1;Aa123456;Pass@123;admin123;admin123456;qwerty123;P@ssw0rd;Admin@123;Abcd@1234;iloveyou;bismillah;theworldinyourhand;Telkomdso123;Kapler123;guru123456;Aboy1234;Tanjung99;gallant123;1hateyou;ZZZzzz111;asd123456;00000000;11111111;22222222;33333333;44444444;55555555;66666666;77777777;88888888;99999999;87654321;23456789;98765432;01234567;10987654;11223344;22334455;12121212;21212121;12341234;qwertyui;qwertyuiop;asdfghjk;asdfghjkl;zxcvbnm12;1qaz2wsx;qazwsxed;qweasdzxc;1qazxsw2;poiuytrew;ilmukomputeripb"
     }
 }
