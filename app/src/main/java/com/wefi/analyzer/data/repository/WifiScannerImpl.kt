@@ -242,7 +242,9 @@ class WifiScannerImpl(
         fun parseSecurityType(capabilities: String?): WifiSecurityType {
             val caps = capabilities?.uppercase() ?: return WifiSecurityType.UNKNOWN
             return when {
-                caps.contains("SAE") || caps.contains("WPA3") -> WifiSecurityType.WPA3
+                // Pure WPA3 Personal (SAE only, tanpa fallback PSK WPA2)
+                (caps.contains("SAE") || caps.contains("WPA3")) && !caps.contains("PSK") -> WifiSecurityType.WPA3
+                // WPA2 Personal atau mode transisi (Mixed WPA2/WPA3 dengan PSK)
                 caps.contains("PSK") || caps.contains("WPA2") || caps.contains("WPA") -> WifiSecurityType.WPA2
                 caps.contains("WEP") -> WifiSecurityType.WEP
                 !caps.contains("WPA") && !caps.contains("WEP") && !caps.contains("EAP") -> WifiSecurityType.OPEN

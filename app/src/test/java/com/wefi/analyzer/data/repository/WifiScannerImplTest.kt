@@ -31,6 +31,13 @@ class WifiScannerImplTest {
     }
 
     @Test
+    fun parseSecurityType_mixedModeWpa2Wpa3_returnsWpa2ForSpecifierCompatibility() {
+        val mixedCaps = "[WPA2-PSK-CCMP][RSN-PSK+SAE-CCMP][ESS]"
+        val result = WifiScannerImpl.parseSecurityType(mixedCaps)
+        assertEquals(WifiSecurityType.WPA2, result)
+    }
+
+    @Test
     fun processRawScanResults_emptyList_returnsEmpty() {
         val result = WifiScannerImpl.processRawScanResults(emptyList())
         org.junit.Assert.assertTrue(result.isEmpty())
