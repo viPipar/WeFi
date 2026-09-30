@@ -197,6 +197,12 @@ class AroundCheckViewModel(
         }
 
         val password = _topPasswordInput.value
+        if (password.isBlank() && scanItems.none { it.security == WifiSecurityType.OPEN }) {
+            _sequentialTestMessage.value = "Password Wi-Fi masih kosong. Masukkan password target di atas."
+            sendSnackbar("Masukkan password target terlebih dahulu.")
+            return
+        }
+
         _isSequentialTesting.value = true
         _currentCandidateIndex.value = 0
         _sequentialTestMessage.value = "Memulai pengujian Wi-Fi..."
@@ -220,6 +226,7 @@ class AroundCheckViewModel(
                 if (!isActive) break
 
                 _sequentialTestMessage.value = "Menguji Wi-Fi [${index + 1}/${scanItems.size}]: ${candidate.ssid}..."
+                connector.cancel()
                 connector.connect(candidate.ssid, password, candidate.security)
 
                 val resultState = connectState.first { state ->

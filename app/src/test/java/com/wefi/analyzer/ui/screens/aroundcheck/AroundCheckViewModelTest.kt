@@ -276,6 +276,25 @@ class AroundCheckViewModelTest {
         assertFalse(viewModel.isSequentialTesting.value)
         assertTrue(viewModel.sequentialTestMessage.value.contains("Berhasil tersambung"))
     }
+
+    @Test
+    fun startSequentialTest_whenCandidateRejected_movesToNextCandidateAfterDelay() = runTest(testDispatcher) {
+        val candidate1 = WifiScanItem("Target-1", "00:11:22:33:44:01", -50, WifiSecurityType.WPA2, 2412, 1)
+        val candidate2 = WifiScanItem("Target-2", "00:11:22:33:44:02", -60, WifiSecurityType.WPA2, 2412, 1)
+        fakeScanner.setScanItems(listOf(candidate1, candidate2))
+
+        viewModel.setTopPasswordInput("12345678")
+        viewModel.startSequentialTest()
+        testScheduler.advanceUntilIdle()
+
+        // Kandidat 1 ditolak user
+        fakeConnector.emitConnectState(WifiConnectState(targetSsid = "Target-1", status = WifiConnectStatus.Rejected, message = "Ditolak"))
+        testScheduler.advanceTimeBy(1600L)
+        testScheduler.runCurrent()
+
+        assertEquals(1, viewModel.currentCandidateIndex.value)
+        assertEquals("Target-2", fakeConnector.lastConnectSsid)
+    }
 }
 
 private class FakeWifiScanner : WifiScanner {
