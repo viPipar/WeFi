@@ -45,8 +45,11 @@ class SpeedTestRepositoryImpl(
             "https://speed.cloudflare.com"
         )
 
+        var successfulPings = 0
+
         for (i in 1..4) {
             val start = System.currentTimeMillis()
+            var pingSucceeded = false
             var duration = 35L
             for (url in pingEndpoints) {
                 try {
@@ -54,6 +57,8 @@ class SpeedTestRepositoryImpl(
                     client.newCall(req).execute().use { res ->
                         if (res.isSuccessful || res.code == 204) {
                             duration = (System.currentTimeMillis() - start).coerceAtLeast(5L)
+                            pingSucceeded = true
+                            successfulPings++
                         }
                     }
                     break
@@ -61,8 +66,23 @@ class SpeedTestRepositoryImpl(
                     // Coba endpoint cadangan
                 }
             }
-            pingSamples.add(duration)
+            if (pingSucceeded) {
+                pingSamples.add(duration)
+            }
             delay(60)
+        }
+
+        // Deteksi kondisi 100% offline (Jaringan Lab Lokal tanpa WAN)
+        if (successfulPings == 0) {
+            emit(
+                currentMetrics.copy(
+                    isRunning = false,
+                    stage = SpeedTestStage.OFFLINE_LAB_MODE,
+                    progress = 1.0f,
+                    errorMessage = "Jaringan Lokal Lab - Tidak Ada Akses Internet Luar (100% Offline)"
+                )
+            )
+            return@flow
         }
 
         val avgPing = if (pingSamples.isNotEmpty()) pingSamples.average() else 0.0
