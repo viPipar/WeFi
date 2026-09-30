@@ -94,5 +94,5 @@
 
 - [x] **Step 1: Run `./gradlew testDebugUnitTest` and ensure 100% green**
 - [x] **Step 2: Run `./gradlew assembleDebug` and ensure successful APK assembly**
-- [ ] **Step 3: Commit and push to GitHub remote**
-- [ ] **Step 4: Verify CI/CD pipeline completion**
+- [x] **Step 3: Commit and push to GitHub remote**
+- [x] **Step 4: Verify CI/CD pipeline completion**
