@@ -110,6 +110,18 @@ class AroundCheckViewModel(
     private val _goalFoundRouter = MutableStateFlow<VerifiedLabRouter?>(null)
     val goalFoundRouter: StateFlow<VerifiedLabRouter?> = _goalFoundRouter.asStateFlow()
 
+    // Panel Kontrol Atas (Mode Collapsible / Accordion untuk memaksimalkan ruang scroll)
+    private val _isControlPanelExpanded = MutableStateFlow(true)
+    val isControlPanelExpanded: StateFlow<Boolean> = _isControlPanelExpanded.asStateFlow()
+
+    fun toggleControlPanelExpanded() {
+        _isControlPanelExpanded.value = !_isControlPanelExpanded.value
+    }
+
+    fun setControlPanelExpanded(expanded: Boolean) {
+        _isControlPanelExpanded.value = expanded
+    }
+
     private val _showCircuitBreakerDialog = MutableStateFlow(false)
     val showCircuitBreakerDialog: StateFlow<Boolean> = _showCircuitBreakerDialog.asStateFlow()
 
@@ -314,6 +326,7 @@ class AroundCheckViewModel(
         _currentCandidateIndex.value = 0
         _traversalTotalCount.value = scanItems.size
         _sequentialTestMessage.value = "Memulai pencarian BFS..."
+        _isControlPanelExpanded.value = false
 
         traversalJob?.cancel()
         traversalJob = viewModelScope.launch(dispatcher) {
@@ -423,6 +436,7 @@ class AroundCheckViewModel(
         _currentCandidateIndex.value = 0
         _traversalTotalCount.value = validPasswords.size
         _sequentialTestMessage.value = "Memulai pengujian DFS pada ${target.ssid}..."
+        _isControlPanelExpanded.value = false
 
         circuitBreakerAcknowledged = false
         circuitBreakerDeferred?.complete(false)

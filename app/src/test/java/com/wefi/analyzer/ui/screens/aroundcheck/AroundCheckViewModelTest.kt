@@ -433,6 +433,25 @@ class AroundCheckViewModelTest {
         assertEquals(0, fakeScanner.startScanCallCount)
         assertEquals(1, fakeScanner.refreshFromCacheCallCount)
     }
+
+    @Test
+    fun isControlPanelExpanded_canBeToggled_andAutoCollapsesOnTraversalStart() = runTest(testDispatcher) {
+        assertTrue(viewModel.isControlPanelExpanded.value)
+
+        viewModel.toggleControlPanelExpanded()
+        assertFalse(viewModel.isControlPanelExpanded.value)
+
+        viewModel.setControlPanelExpanded(true)
+        assertTrue(viewModel.isControlPanelExpanded.value)
+
+        val candidate = WifiScanItem("Bfs-AP", "00:11:22:33:44:77", -50, WifiSecurityType.WPA2, 2412, 1)
+        fakeScanner.setScanItems(listOf(candidate))
+        viewModel.setTopPasswordInput("topSecret123")
+
+        viewModel.startBfsTraversal()
+        // Saat traversal dimulai, panel harus otomatis collapse agar list router mendapatkan ruang pandang maksimal
+        assertFalse(viewModel.isControlPanelExpanded.value)
+    }
 }
 
 

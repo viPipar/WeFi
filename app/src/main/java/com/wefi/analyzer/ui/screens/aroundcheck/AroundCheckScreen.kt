@@ -3,8 +3,10 @@ package com.wefi.analyzer.ui.screens.aroundcheck
 import android.content.Intent
 import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -34,6 +36,8 @@ import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.HourglassBottom
 import androidx.compose.material.icons.rounded.Key
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.LocationOff
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Refresh
@@ -139,6 +143,7 @@ fun AroundCheckScreen(
     val goalFoundRouter by viewModel.goalFoundRouter.collectAsState()
     val showCircuitBreakerDialog by viewModel.showCircuitBreakerDialog.collectAsState()
     val verifiedRouters by viewModel.verifiedRouters.collectAsState()
+    val isControlPanelExpanded by viewModel.isControlPanelExpanded.collectAsState()
 
     val snackbarHostState = remember { SnackbarHostState() }
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -349,7 +354,7 @@ fun AroundCheckScreen(
         ) {
             Spacer(modifier = Modifier.height(8.dp))
 
-            // 1. Unified Top Card: Segmented Mode Switcher (BFS vs DFS) & Dynamic Input Panel
+            // 1. Unified Top Card: Collapsible Accordion (BFS vs DFS) & Expansive Viewport
             Surface(
                 shape = RoundedCornerShape(16.dp),
                 color = MaterialTheme.colorScheme.surface,
@@ -357,9 +362,14 @@ fun AroundCheckScreen(
                 shadowElevation = 2.dp,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.padding(14.dp)) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    // Header Bar (Clickable to Expand / Collapse)
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { viewModel.toggleControlPanelExpanded() }
+                            .padding(vertical = 4.dp, horizontal = 2.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
@@ -380,40 +390,150 @@ fun AroundCheckScreen(
                             }
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Pencarian Sekuensial Lab",
+                                text = "Pencarian Lab",
                                 fontWeight = FontWeight.Bold,
                                 style = MaterialTheme.typography.titleSmall,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = if (selectedMode == AroundCheckMode.BFS) BlynkBlueTint else Color(0xFFFEF3C7)
+                            ) {
+                                Text(
+                                    text = if (selectedMode == AroundCheckMode.BFS) "MODE BFS" else "MODE DFS",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (selectedMode == AroundCheckMode.BFS) BlynkBlueDark else Color(0xFF92400E),
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
                         }
 
-                        if (isSequentialTesting) {
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = Color(0xFFFEF3C7)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (isSequentialTesting) {
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = Color(0xFFFEF3C7)
                                 ) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(10.dp),
-                                        strokeWidth = 1.5.dp,
-                                        color = QualityAmber
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(10.dp),
+                                            strokeWidth = 1.5.dp,
+                                            color = QualityAmber
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = if (selectedMode == AroundCheckMode.BFS) "BFS AKTIF" else "DFS AKTIF",
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF92400E)
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(4.dp))
+                            }
+
+                            IconButton(
+                                onClick = { viewModel.toggleControlPanelExpanded() },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (isControlPanelExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
+                                    contentDescription = if (isControlPanelExpanded) "Ciutkan Panel" else "Perluas Panel",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    // Collapsed Compact Strip (ketika panel diciutkan agar daftar router lega)
+                    AnimatedVisibility(
+                        visible = !isControlPanelExpanded,
+                        enter = expandVertically() + fadeIn(),
+                        exit = shrinkVertically() + fadeOut()
+                    ) {
+                        Column {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                if (selectedMode == AroundCheckMode.BFS) {
                                     Text(
-                                        text = if (selectedMode == AroundCheckMode.BFS) "BFS AKTIF" else "DFS AKTIF",
-                                        fontSize = 9.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color(0xFF92400E)
+                                        text = if (topPasswordInput.isBlank()) "Password BFS belum diatur" else "Passphrase: •••••••• (${topPasswordInput.length} kar)",
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.weight(1f)
                                     )
+                                    if (isSequentialTesting) {
+                                        Button(
+                                            onClick = { viewModel.cancelTraversal() },
+                                            shape = RoundedCornerShape(8.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = QualityRed),
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)
+                                        ) {
+                                            Text("Batal", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    } else {
+                                        Button(
+                                            onClick = { viewModel.startBfsTraversal() },
+                                            shape = RoundedCornerShape(8.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = BlynkBlue),
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)
+                                        ) {
+                                            Text("Cari BFS", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                } else {
+                                    Text(
+                                        text = if (dfsTargetItem == null) "Pilih target di list bawah" else "${dfsTargetItem?.ssid} (${dfsParsedStats.validPasswords.size} pwd)",
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    if (isSequentialTesting) {
+                                        Button(
+                                            onClick = { viewModel.cancelTraversal() },
+                                            shape = RoundedCornerShape(8.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = QualityRed),
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)
+                                        ) {
+                                            Text("Batal", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    } else {
+                                        Button(
+                                            onClick = { viewModel.startDfsTraversal() },
+                                            enabled = dfsTargetItem != null && dfsParsedStats.validPasswords.isNotEmpty(),
+                                            shape = RoundedCornerShape(8.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = BlynkBlue),
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)
+                                        ) {
+                                            Text("Uji DFS", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                    // Expanded Controls (seluruh kontrol input ketika panel dibuka)
+                    AnimatedVisibility(
+                        visible = isControlPanelExpanded,
+                        enter = expandVertically() + fadeIn(),
+                        exit = shrinkVertically() + fadeOut()
+                    ) {
+                        Column {
+                            Spacer(modifier = Modifier.height(10.dp))
 
                     // Segmented Control Tab (Mode BFS vs Mode DFS)
                     Surface(
@@ -821,8 +941,10 @@ fun AroundCheckScreen(
                             }
                         }
                     }
+                    }
                 }
             }
+        }
 
             // 2. Goal Ditemukan Celebration Card
             AnimatedVisibility(
@@ -1265,38 +1387,44 @@ fun AroundCheckScreen(
                     shape = RoundedCornerShape(16.dp),
                     color = MaterialTheme.colorScheme.surface,
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
                 ) {
-                    Column(
+                    Box(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 32.dp, horizontal = 16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                            .fillMaxSize()
+                            .padding(24.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Wifi,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f),
-                            modifier = Modifier.size(48.dp)
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text(
-                            text = "Belum Ada Jaringan Terdeteksi",
-                            fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Tekan tombol SCAN di atas untuk memindai router di sekitar Anda.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                imageVector = Icons.Rounded.Wifi,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f),
+                                modifier = Modifier.size(48.dp)
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "Belum Ada Jaringan Terdeteksi",
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Tekan tombol SCAN di atas untuk memindai router di sekitar Anda.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             } else {
                 LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     contentPadding = PaddingValues(top = 4.dp, bottom = 100.dp)
                 ) {
