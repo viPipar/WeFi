@@ -1,5 +1,7 @@
 package com.wefi.analyzer.ui.screens.aroundcheck
 
+import com.wefi.analyzer.domain.model.AroundCheckMode
+import com.wefi.analyzer.domain.model.VerifiedLabRouter
 import com.wefi.analyzer.domain.model.WifiAuditLogEntry
 import com.wefi.analyzer.domain.model.WifiAuditResult
 import com.wefi.analyzer.domain.model.WifiConnectState
@@ -7,6 +9,7 @@ import com.wefi.analyzer.domain.model.WifiConnectStatus
 import com.wefi.analyzer.domain.model.WifiScanItem
 import com.wefi.analyzer.domain.model.WifiScanState
 import com.wefi.analyzer.domain.model.WifiSecurityType
+import com.wefi.analyzer.domain.repository.VerifiedWifiStore
 import com.wefi.analyzer.domain.repository.WifiAuditLogger
 import com.wefi.analyzer.domain.repository.WifiConnector
 import com.wefi.analyzer.domain.repository.WifiScanner
@@ -35,6 +38,7 @@ class AroundCheckViewModelTest {
     private lateinit var fakeScanner: FakeWifiScanner
     private lateinit var fakeConnector: FakeWifiConnector
     private lateinit var fakeAuditLogger: FakeWifiAuditLogger
+    private lateinit var fakeVerifiedStore: FakeVerifiedWifiStore
     private lateinit var viewModel: AroundCheckViewModel
 
     @Before
@@ -43,7 +47,8 @@ class AroundCheckViewModelTest {
         fakeScanner = FakeWifiScanner()
         fakeConnector = FakeWifiConnector()
         fakeAuditLogger = FakeWifiAuditLogger()
-        viewModel = AroundCheckViewModel(fakeScanner, fakeConnector, fakeAuditLogger, testDispatcher)
+        fakeVerifiedStore = FakeVerifiedWifiStore()
+        viewModel = AroundCheckViewModel(fakeScanner, fakeConnector, fakeAuditLogger, testDispatcher, fakeVerifiedStore)
     }
 
     @After
@@ -295,6 +300,64 @@ class AroundCheckViewModelTest {
         assertEquals(1, viewModel.currentCandidateIndex.value)
         assertEquals("Target-2", fakeConnector.lastConnectSsid)
     }
+
+    @Test
+    fun setMode_switchesBetweenBfsAndDfs() {
+        assertEquals(AroundCheckMode.BFS, viewModel.selectedMode.value)
+        viewModel.setMode(AroundCheckMode.DFS)
+        assertEquals(AroundCheckMode.DFS, viewModel.selectedMode.value)
+    }
+
+    @Test
+    fun startDfsTraversal_whenTargetNull_notifiesUser() {
+        viewModel.setMode(AroundCheckMode.DFS)
+        viewModel.setDfsCsvInput("pass12345;pass67890")
+        viewModel.startDfsTraversal()
+
+        assertFalse(viewModel.isSequentialTesting.value)
+        assertEquals("Pilih router lab target terlebih dahulu.", viewModel.sequentialTestMessage.value)
+    }
+
+    @Test
+    fun startDfsTraversal_iteratesPasswordsAndFindsGoal() = runTest(testDispatcher) {
+        val targetAp = WifiScanItem("Target-AP", "00:11:22:33:44:99", -55, WifiSecurityType.WPA2, 2412, 1)
+        viewModel.selectDfsTargetItem(targetAp)
+        viewModel.setDfsCsvInput("wrongpass1; correctpass123")
+
+        viewModel.startDfsTraversal()
+        testScheduler.advanceUntilIdle()
+
+        // Emulasikan password 1 salah
+        fakeConnector.emitConnectState(WifiConnectState(targetSsid = "Target-AP", status = WifiConnectStatus.Rejected))
+        testScheduler.advanceTimeBy(3500L)
+        testScheduler.runCurrent()
+
+        // Emulasikan password 2 benar
+        fakeConnector.emitConnectState(WifiConnectState(targetSsid = "Target-AP", status = WifiConnectStatus.Connected))
+        testScheduler.advanceUntilIdle()
+
+        assertFalse(viewModel.isSequentialTesting.value)
+        assertEquals("correctpass123", viewModel.goalFoundRouter.value?.workingPassword)
+        assertTrue(fakeVerifiedStore.isRouterVerified("00:11:22:33:44:99", "Target-AP"))
+    }
+
+    @Test
+    fun startBfsTraversal_whenRouterMatches_savesToVault() = runTest(testDispatcher) {
+        val candidate = WifiScanItem("Bfs-AP", "00:11:22:33:44:77", -50, WifiSecurityType.WPA2, 2412, 1)
+        fakeScanner.setScanItems(listOf(candidate))
+        viewModel.setTopPasswordInput("topSecret123")
+
+        viewModel.startBfsTraversal()
+        testScheduler.advanceUntilIdle()
+
+        fakeConnector.emitConnectState(WifiConnectState(targetSsid = "Bfs-AP", status = WifiConnectStatus.Connected))
+        testScheduler.advanceUntilIdle()
+
+        assertFalse(viewModel.isSequentialTesting.value)
+        assertEquals("Bfs-AP", viewModel.goalFoundRouter.value?.ssid)
+        assertTrue(viewModel.isRouterVerified("00:11:22:33:44:77", "Bfs-AP"))
+        assertEquals("topSecret123", viewModel.getVerifiedPassword("00:11:22:33:44:77", "Bfs-AP"))
+    }
 }
 
 private class FakeWifiScanner : WifiScanner {
@@ -377,5 +440,33 @@ private class FakeWifiAuditLogger : WifiAuditLogger {
 
     override fun clear() {
         _auditLogs.value = emptyList()
+    }
+}
+
+private class FakeVerifiedWifiStore : VerifiedWifiStore {
+    private val _routers = MutableStateFlow<List<VerifiedLabRouter>>(emptyList())
+    override val verifiedRouters: StateFlow<List<VerifiedLabRouter>> = _routers.asStateFlow()
+
+    override fun saveVerifiedRouter(router: VerifiedLabRouter) {
+        val current = _routers.value.toMutableList()
+        current.removeAll { it.bssid == router.bssid || it.ssid == router.ssid }
+        current.add(0, router)
+        _routers.value = current
+    }
+
+    override fun isRouterVerified(bssid: String, ssid: String): Boolean {
+        return _routers.value.any { it.bssid == bssid || it.ssid == ssid }
+    }
+
+    override fun getVerifiedPassword(bssid: String, ssid: String): String? {
+        return _routers.value.firstOrNull { it.bssid == bssid || it.ssid == ssid }?.workingPassword
+    }
+
+    override fun removeVerifiedRouter(bssid: String) {
+        _routers.value = _routers.value.filterNot { it.bssid == bssid }
+    }
+
+    override fun clearAll() {
+        _routers.value = emptyList()
     }
 }
