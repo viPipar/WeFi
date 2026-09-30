@@ -17,6 +17,7 @@ import com.wefi.analyzer.domain.repository.WifiConnector
 import com.wefi.analyzer.domain.repository.WifiScanner
 import com.wefi.analyzer.domain.util.ConnectCheckResult
 import com.wefi.analyzer.domain.util.DfsPasswordSanitizer
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -111,6 +112,9 @@ class AroundCheckViewModel(
 
     private val _showCircuitBreakerDialog = MutableStateFlow(false)
     val showCircuitBreakerDialog: StateFlow<Boolean> = _showCircuitBreakerDialog.asStateFlow()
+
+    private var circuitBreakerDeferred: CompletableDeferred<Boolean>? = null
+    private var circuitBreakerAcknowledged = false
 
     private var traversalJob: Job? = null
 
@@ -228,6 +232,9 @@ class AroundCheckViewModel(
 
     fun acknowledgeCircuitBreaker(continueTraversal: Boolean) {
         _showCircuitBreakerDialog.value = false
+        circuitBreakerAcknowledged = true
+        circuitBreakerDeferred?.complete(continueTraversal)
+        circuitBreakerDeferred = null
         if (!continueTraversal) {
             cancelTraversal()
         }
@@ -401,6 +408,10 @@ class AroundCheckViewModel(
         _traversalTotalCount.value = validPasswords.size
         _sequentialTestMessage.value = "Memulai pengujian DFS pada ${target.ssid}..."
 
+        circuitBreakerAcknowledged = false
+        circuitBreakerDeferred?.complete(false)
+        circuitBreakerDeferred = null
+
         traversalJob?.cancel()
         traversalJob = viewModelScope.launch(dispatcher) {
             var consecutiveFailures = 0
@@ -453,9 +464,15 @@ class AroundCheckViewModel(
                     return@launch
                 } else {
                     consecutiveFailures++
-                    // Circuit Breaker jika terjadi 10 kegagalan beruntun
-                    if (consecutiveFailures >= 10 && index + 1 < validPasswords.size) {
+                    // Circuit Breaker jika terjadi 10 kegagalan beruntun dan belum pernah disetujui sebelumnya
+                    if (consecutiveFailures >= 10 && !circuitBreakerAcknowledged && index + 1 < validPasswords.size) {
                         _showCircuitBreakerDialog.value = true
+                        val deferred = CompletableDeferred<Boolean>()
+                        circuitBreakerDeferred = deferred
+                        val shouldContinue = deferred.await()
+                        if (!shouldContinue || !isActive) {
+                            break
+                        }
                     }
                 }
             }
@@ -472,6 +489,8 @@ class AroundCheckViewModel(
     }
 
     fun cancelTraversal() {
+        circuitBreakerDeferred?.complete(false)
+        circuitBreakerDeferred = null
         traversalJob?.cancel()
         traversalJob = null
         connector.cancel()

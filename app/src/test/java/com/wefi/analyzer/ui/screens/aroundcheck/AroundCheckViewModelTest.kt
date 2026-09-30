@@ -370,6 +370,45 @@ class AroundCheckViewModelTest {
         assertTrue(viewModel.dfsCsvInput.value.contains("ilmukomputeripb"))
         assertEquals("ilmukomputeripb", parsed.validPasswords.last())
     }
+
+    @Test
+    fun startDfsTraversal_whenCircuitBreakerTriggered_promptsOnlyOnceAndRespectsDecision() = runTest(testDispatcher) {
+        val targetAp = WifiScanItem("Lab-AP-Circuit", "00:11:22:33:44:88", -60, WifiSecurityType.WPA2, 2412, 1)
+        viewModel.selectDfsTargetItem(targetAp)
+        // 13 password berbeda (min 8 karakter)
+        val passwords = (1..13).joinToString(";") { "testpass%02d".format(it) }
+        viewModel.setDfsCsvInput(passwords)
+
+        viewModel.startDfsTraversal()
+        testScheduler.advanceUntilIdle()
+
+        // Emulasikan 10 kegagalan beruntun
+        for (i in 1..10) {
+            fakeConnector.emitConnectState(WifiConnectState(targetSsid = "Lab-AP-Circuit", status = WifiConnectStatus.Failed))
+            testScheduler.advanceTimeBy(3500L)
+            testScheduler.runCurrent()
+        }
+
+        // Pada kegagalan ke-10, dialog circuit breaker harus aktif
+        assertTrue("Circuit Breaker harus tampil pada kegagalan ke-10", viewModel.showCircuitBreakerDialog.value)
+
+        // Verifikasi bahwa loop di-pause (belum lanjut ke index 10 / password ke-11 sebelum direspons)
+        assertEquals(9, viewModel.currentCandidateIndex.value)
+
+        // User menekan "Lanjutkan"
+        viewModel.acknowledgeCircuitBreaker(continueTraversal = true)
+        testScheduler.runCurrent()
+
+        assertFalse("Dialog harus tertutup setelah direspons", viewModel.showCircuitBreakerDialog.value)
+
+        // Emulasikan kegagalan ke-11
+        fakeConnector.emitConnectState(WifiConnectState(targetSsid = "Lab-AP-Circuit", status = WifiConnectStatus.Failed))
+        testScheduler.advanceTimeBy(3500L)
+        testScheduler.runCurrent()
+
+        // SANGAT PENTING: Dialog TIDAK boleh muncul lagi (tidak spam)!
+        assertFalse("Circuit Breaker TIDAK boleh spam lagi setelah user menyetujui lanjutkan", viewModel.showCircuitBreakerDialog.value)
+    }
 }
 
 
