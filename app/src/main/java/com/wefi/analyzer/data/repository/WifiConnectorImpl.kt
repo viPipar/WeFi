@@ -300,10 +300,16 @@ class WifiConnectorImpl(
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Gagal memulai proses koneksi saran jaringan", e)
+            Log.e(TAG, "Gagal memulai proses koneksi nirkabel", e)
+            val friendlyReason = when (e) {
+                is SecurityException -> "Izin sistem koneksi jaringan (CHANGE_NETWORK_STATE) belum diberikan."
+                is IllegalArgumentException -> "Parameter SSID atau keamanan router tidak valid."
+                is IllegalStateException -> "Layanan konektivitas sistem sedang sibuk. Silakan coba sesaat lagi."
+                else -> "Gagal berkomunikasi dengan layanan jaringan sistem."
+            }
             recordFailure(
                 ssid = ssid,
-                reason = "Terjadi kesalahan saat memulai koneksi: ${e.message}",
+                reason = friendlyReason,
                 auditResult = WifiAuditResult.FAILED
             )
         }
