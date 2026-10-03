@@ -64,7 +64,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -73,7 +72,6 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -103,7 +101,6 @@ import com.wefi.analyzer.domain.model.HybridRouterStatus
 import com.wefi.analyzer.domain.model.VerifiedLabRouter
 import com.wefi.analyzer.domain.util.DfsPasswordSanitizer
 import com.wefi.analyzer.domain.model.WifiAuditLogEntry
-import com.wefi.analyzer.domain.model.WifiAuditResult
 import com.wefi.analyzer.domain.model.WifiConnectStatus
 import com.wefi.analyzer.domain.model.WifiScanItem
 import com.wefi.analyzer.domain.model.WifiScanState
@@ -188,17 +185,11 @@ fun AroundCheckScreen(
 
     // Modal Bottom Sheet untuk Audit Log Riwayat Koneksi Lab
     if (showAuditSheet) {
-        ModalBottomSheet(
+        AuditLogBottomSheet(
+            logs = auditLogs,
             onDismissRequest = { viewModel.setShowAuditBottomSheet(false) },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-            containerColor = Color.White
-        ) {
-            AuditLogSheetContent(
-                logs = auditLogs,
-                onClearClick = { viewModel.clearAuditLogs() },
-                onCloseClick = { viewModel.setShowAuditBottomSheet(false) }
-            )
-        }
+            onClearLogs = { viewModel.clearAuditLogs() }
+        )
     }
 
     // Dialog Input Password Manual (Masked + Toggle)
@@ -2545,136 +2536,3 @@ private fun WifiScanItemCard(
     }
 }
 
-@Composable
-private fun AuditLogSheetContent(
-    logs: List<WifiAuditLogEntry>,
-    onClearClick: () -> Unit,
-    onCloseClick: () -> Unit
-) {
-    val dateFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 12.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column {
-                Text(
-                    text = "AUDIT LOG KONEKSI",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = "Riwayat hasil percobaan tanpa menyimpan password",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            Row {
-                if (logs.isNotEmpty()) {
-                    TextButton(onClick = onClearClick) {
-                        Text("Hapus", color = QualityRed, fontSize = 12.sp)
-                    }
-                }
-                IconButton(onClick = onCloseClick) {
-                    Icon(imageVector = Icons.Rounded.Close, contentDescription = "Tutup")
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        if (logs.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 32.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "Belum ada riwayat audit koneksi.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(350.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(logs, key = { it.id }) { log ->
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = Color(0xFFF9FAFB),
-                        border = BorderStroke(1.dp, Color(0xFFE5E7EB)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = log.ssid,
-                                    fontWeight = FontWeight.Bold,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = dateFormat.format(Date(log.timestamp)),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Surface(
-                                    shape = RoundedCornerShape(6.dp),
-                                    color = when (log.result) {
-                                        WifiAuditResult.CONNECTED -> Color(0xFFDCFCE7)
-                                        WifiAuditResult.REJECTED -> Color(0xFFFEE2E2)
-                                        WifiAuditResult.TIMEOUT -> Color(0xFFFFEDD5)
-                                        WifiAuditResult.FAILED -> Color(0xFFFEE2E2)
-                                    }
-                                ) {
-                                    Text(
-                                        text = log.result.label,
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = when (log.result) {
-                                            WifiAuditResult.CONNECTED -> Color(0xFF15803D)
-                                            WifiAuditResult.REJECTED, WifiAuditResult.FAILED -> Color(0xFFB91C1C)
-                                            WifiAuditResult.TIMEOUT -> Color(0xFFC2410C)
-                                        },
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                    )
-                                }
-                                if (log.reason.isNotBlank()) {
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = log.reason,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        fontSize = 11.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        Spacer(modifier = Modifier.height(16.dp))
-    }
-}
