@@ -52,7 +52,9 @@ enum class HostRiskLevel(val label: String) {
 data class HostRiskProfile(
     val level: HostRiskLevel = HostRiskLevel.SAFE,
     val score: Int = 0,
-    val highlights: List<String> = emptyList()
+    val highlights: List<String> = emptyList(),
+    val summary: String = "",
+    val recommendations: List<String> = emptyList()
 )
 
 data class DiscoveredHost(

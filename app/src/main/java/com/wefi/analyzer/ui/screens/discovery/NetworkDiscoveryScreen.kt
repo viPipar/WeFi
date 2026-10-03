@@ -1,6 +1,7 @@
 package com.wefi.analyzer.ui.screens.discovery
 
 import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
@@ -25,15 +26,20 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.DeviceHub
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Stop
@@ -43,12 +49,17 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -67,6 +78,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.wefi.analyzer.domain.model.DiscoveredHost
+import com.wefi.analyzer.domain.model.HostRiskLevel
 import com.wefi.analyzer.domain.model.PortResult
 import com.wefi.analyzer.ui.theme.BlynkBlue
 import com.wefi.analyzer.ui.theme.BlynkBlueDark
@@ -81,6 +93,8 @@ fun NetworkDiscoveryScreen(
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val selectedHost by viewModel.selectedHostForDetail.collectAsState()
+    val isDeepScanning by viewModel.isDeepScanningHost.collectAsState()
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
     var isLimitationsExpanded by remember { mutableStateOf(false) }
@@ -178,13 +192,25 @@ fun NetworkDiscoveryScreen(
             }
         } else {
             items(uiState.hosts, key = { it.ip }) { host ->
-                DiscoveredHostCard(host = host)
+                DiscoveredHostCard(
+                    host = host,
+                    onOpenDetail = { viewModel.selectHostForDetail(host) }
+                )
             }
         }
 
         item {
             Spacer(modifier = Modifier.height(24.dp))
         }
+    }
+
+    if (selectedHost != null) {
+        HostDetailBottomSheet(
+            host = selectedHost!!,
+            isDeepScanning = isDeepScanning,
+            onDismiss = { viewModel.selectHostForDetail(null) },
+            onDeepScan = { viewModel.scanHostDeep(selectedHost!!) }
+        )
     }
 }
 
@@ -460,8 +486,27 @@ private fun AndroidLimitationsAccordion(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun DiscoveredHostCard(host: DiscoveredHost) {
+private fun DiscoveredHostCard(
+    host: DiscoveredHost,
+    onOpenDetail: () -> Unit
+) {
     var isExpanded by remember { mutableStateOf(false) }
+
+    val riskColor = when (host.riskProfile.level) {
+        HostRiskLevel.CRITICAL -> QualityRed
+        HostRiskLevel.HIGH -> QualityRed
+        HostRiskLevel.MEDIUM -> QualityAmber
+        HostRiskLevel.LOW -> BlynkBlue
+        HostRiskLevel.SAFE -> QualityGreen
+    }
+
+    val riskLabel = when (host.riskProfile.level) {
+        HostRiskLevel.CRITICAL -> "KRITIS"
+        HostRiskLevel.HIGH -> "TINGGI"
+        HostRiskLevel.MEDIUM -> "SEDANG"
+        HostRiskLevel.LOW -> "RENDAH"
+        HostRiskLevel.SAFE -> "AMAN"
+    }
 
     Card(
         modifier = Modifier
@@ -525,6 +570,18 @@ private fun DiscoveredHostCard(host: DiscoveredHost) {
                                         modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
                                     )
                                 }
+                            }
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = riskColor.copy(alpha = 0.12f)
+                            ) {
+                                Text(
+                                    text = riskLabel,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = riskColor,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                )
                             }
                         }
                         Text(
@@ -659,6 +716,525 @@ private fun DiscoveredHostCard(host: DiscoveredHost) {
                                         }
                                     }
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Host Card Footer: Risk score & Open Detail Action
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Skor Paparan: ${host.riskProfile.score}/100",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = riskColor
+                )
+
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = BlynkBlueTint,
+                    modifier = Modifier.clickable { onOpenDetail() }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Security,
+                            contentDescription = null,
+                            tint = BlynkBlueDark,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Text(
+                            text = "Detail & Audit",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = BlynkBlueDark
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun HostDetailBottomSheet(
+    host: DiscoveredHost,
+    isDeepScanning: Boolean,
+    onDismiss: () -> Unit,
+    onDeepScan: () -> Unit
+) {
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scrollState = rememberScrollState()
+
+    val riskColor = when (host.riskProfile.level) {
+        HostRiskLevel.CRITICAL -> QualityRed
+        HostRiskLevel.HIGH -> QualityRed
+        HostRiskLevel.MEDIUM -> QualityAmber
+        HostRiskLevel.LOW -> BlynkBlue
+        HostRiskLevel.SAFE -> QualityGreen
+    }
+
+    val riskLabel = when (host.riskProfile.level) {
+        HostRiskLevel.CRITICAL -> "RISIKO KRITIS"
+        HostRiskLevel.HIGH -> "RISIKO TINGGI"
+        HostRiskLevel.MEDIUM -> "RISIKO SEDANG"
+        HostRiskLevel.LOW -> "RISIKO RENDAH"
+        HostRiskLevel.SAFE -> "AMAN / NORMAL"
+    }
+
+    val webPort = host.openPorts.firstOrNull { it.port in listOf(80, 443, 8080, 8443) }?.port
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 32.dp)
+                .verticalScroll(scrollState),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            // Header Bar
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = if (host.isGateway) BlynkBlueTint else MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = if (host.probableDeviceType.contains("CCTV", ignoreCase = true)) {
+                                    Icons.Rounded.Videocam
+                                } else {
+                                    Icons.Rounded.DeviceHub
+                                },
+                                contentDescription = null,
+                                tint = if (host.isGateway) BlynkBlue else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                    }
+                    Column {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                text = host.ip,
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            if (host.isGateway) {
+                                Surface(shape = RoundedCornerShape(4.dp), color = BlynkBlueTint) {
+                                    Text(
+                                        text = "GATEWAY",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = BlynkBlueDark,
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                        }
+                        Text(
+                            text = "${host.probableDeviceType} • ${host.vendor}",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        imageVector = Icons.Rounded.Close,
+                        contentDescription = "Tutup",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            // Risk Assessment Card
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = riskColor.copy(alpha = 0.08f)),
+                border = BorderStroke(1.dp, riskColor.copy(alpha = 0.35f))
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Security,
+                                contentDescription = null,
+                                tint = riskColor,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = "PROFIL RISIKO & KEAMANAN",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = riskColor
+                            )
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = riskColor.copy(alpha = 0.15f)
+                        ) {
+                            Text(
+                                text = riskLabel,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = riskColor,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+
+                    Text(
+                        text = host.riskProfile.summary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+
+                    if (host.riskProfile.highlights.isNotEmpty()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                text = "Temuan Paparan:",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            host.riskProfile.highlights.forEach { highlight ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.Top
+                                ) {
+                                    Text(text = "•", fontSize = 12.sp, color = riskColor, fontWeight = FontWeight.Bold)
+                                    Text(
+                                        text = highlight,
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    if (host.riskProfile.recommendations.isNotEmpty()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                text = "Langkah Mitigasi Lab:",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            host.riskProfile.recommendations.forEach { rec ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.Top
+                                ) {
+                                    Text(text = "→", fontSize = 12.sp, color = BlynkBlue, fontWeight = FontWeight.Bold)
+                                    Text(
+                                        text = rec,
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Quick Actions Section
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Deep Scan Button
+                Button(
+                    onClick = onDeepScan,
+                    enabled = !isDeepScanning,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = BlynkBlue, contentColor = Color.White)
+                ) {
+                    if (isDeepScanning) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(14.dp),
+                            strokeWidth = 2.dp,
+                            color = Color.White
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(text = "Memindai...", fontSize = 12.sp)
+                    } else {
+                        Icon(imageVector = Icons.Rounded.Search, contentDescription = null, modifier = Modifier.size(15.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(text = "Deep Scan Port", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                // Web Admin Button (if port open)
+                if (webPort != null) {
+                    OutlinedButton(
+                        onClick = {
+                            val scheme = if (webPort == 443 || webPort == 8443) "https" else "http"
+                            val portSuffix = if (webPort == 80 || webPort == 443) "" else ":$webPort"
+                            val url = "$scheme://${host.ip}$portSuffix"
+                            try {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Tidak dapat membuka browser: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = BlynkBlueDark),
+                        border = BorderStroke(1.dp, BlynkBlue.copy(alpha = 0.5f))
+                    ) {
+                        Icon(imageVector = Icons.Rounded.Language, contentDescription = null, modifier = Modifier.size(15.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(text = "Web Admin", fontSize = 12.sp)
+                    }
+                }
+
+                // Copy Brief Button
+                OutlinedButton(
+                    onClick = {
+                        val brief = buildString {
+                            appendLine("=== AUDIT HOST LAB WEFI ===")
+                            appendLine("IP: ${host.ip} (${if (host.isGateway) "Gateway" else "Host"})")
+                            appendLine("Tipe: ${host.probableDeviceType}")
+                            appendLine("Vendor: ${host.vendor}")
+                            appendLine("MAC: ${host.macAddress ?: "Restriksi Android 10+"}")
+                            appendLine("Latensi: ${host.responseTimeMs} ms")
+                            appendLine("Tingkat Risiko: ${host.riskProfile.level.name} (Skor: ${host.riskProfile.score}/100)")
+                            appendLine("Port Terbuka: " + if (host.openPorts.isEmpty()) "Tidak ada" else host.openPorts.joinToString { "${it.port}/${it.serviceName}" })
+                            if (host.riskProfile.highlights.isNotEmpty()) {
+                                appendLine("Temuan:")
+                                host.riskProfile.highlights.forEach { appendLine("- $it") }
+                            }
+                        }
+                        clipboardManager.setText(AnnotatedString(brief))
+                        Toast.makeText(context, "Ringkasan host disalin", Toast.LENGTH_SHORT).show()
+                    },
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                ) {
+                    Icon(imageVector = Icons.Rounded.ContentCopy, contentDescription = null, modifier = Modifier.size(15.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(text = "Salin", fontSize = 12.sp)
+                }
+            }
+
+            // Technical Details Card
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "Parameter Teknis",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(text = "MAC Address", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            text = host.macAddress ?: "Restriksi Android 10+ (Non-Root)",
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(text = "Waktu Respon (RTT)", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            text = "${host.responseTimeMs} ms",
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            color = QualityGreen
+                        )
+                    }
+                }
+            }
+
+            // Open Ports Section
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Port & Servis Terbuka (${host.openPorts.size})",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        if (host.openPorts.isNotEmpty()) {
+                            Text(
+                                text = "TCP Connect",
+                                fontSize = 10.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    if (host.openPorts.isEmpty()) {
+                        Text(
+                            text = "Belum ada port terbuka terdeteksi. Jalankan 'Deep Scan Port' di atas untuk memindai 24 port servis lab.",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            host.openPorts.forEach { portResult ->
+                                PortChip(portResult)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Banner Grabbing Section (if present)
+            if (host.banner != null) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = "Banner Servis & Respon HTTP/RTSP",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        host.banner.server?.let {
+                            Text(text = "HTTP Server: $it", fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                        }
+                        host.banner.rtspServer?.let {
+                            Text(text = "RTSP Server: $it", fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                        }
+                        host.banner.onvifManufacturer?.let {
+                            Text(text = "ONVIF: $it ${host.banner.onvifModel ?: ""} (${host.banner.onvifFirmware ?: ""})", fontSize = 11.sp)
+                        }
+                    }
+                }
+            }
+
+            // CVE Matches Section (if present)
+            if (host.cveMatches.isNotEmpty()) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = QualityAmber.copy(alpha = 0.08f)),
+                    border = BorderStroke(1.dp, QualityAmber.copy(alpha = 0.35f))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(imageVector = Icons.Rounded.Security, contentDescription = null, tint = QualityAmber, modifier = Modifier.size(16.dp))
+                            Text(
+                                text = "Referensi Kerentanan Publik (${host.cveMatches.size})",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        host.cveMatches.forEach { cve ->
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Text(
+                                    text = "${cve.cveId} (CVSS ${cve.cvssScore})",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (cve.cvssScore >= 9.0) QualityRed else QualityAmber
+                                )
+                                Text(
+                                    text = cve.description,
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                         }
                     }

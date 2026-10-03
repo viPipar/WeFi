@@ -622,10 +622,29 @@ class NetworkDiscoveryRepositoryImpl(
             else -> HostRiskLevel.SAFE
         }
 
+        val summary = when (level) {
+            HostRiskLevel.CRITICAL -> "Perangkat memiliki eksposur tingkat kritis yang membutuhkan mitigasi segera."
+            HostRiskLevel.HIGH -> "Ditemukan servis sensitif atau port plaintext terbuka yang berisiko di jaringan lab."
+            HostRiskLevel.MEDIUM -> "Beberapa servis aktif terdeteksi. Disarankan melakukan audit berkala."
+            HostRiskLevel.LOW -> "Port terdeteksi aktif dengan konfigurasi relatif standar."
+            HostRiskLevel.SAFE -> "Tidak ada kerentanan atau servis sensitif yang terekspos terbuka."
+        }
+
+        val recommendations = mutableListOf<String>()
+        if (openPortNumbers.contains(23)) recommendations.add("Ganti Telnet port 23 dengan SSH (port 22) terenkripsi.")
+        if (openPortNumbers.contains(21)) recommendations.add("Gunakan SFTP/FTPS sebagai pengganti FTP plaintext.")
+        if (openPortNumbers.contains(80) || openPortNumbers.contains(8080)) recommendations.add("Aktifkan HTTPS dan gunakan kredensial kuat untuk Web Admin.")
+        if (openPortNumbers.contains(445) || openPortNumbers.contains(139)) recommendations.add("Batasi akses SMB/NetBIOS hanya untuk subnet tepercaya.")
+        if (openPortNumbers.contains(8291)) recommendations.add("Ubah port Winbox default atau batasi IP akses di firewall MikroTik.")
+        if (cveMaxCvss >= 7.0) recommendations.add("Perbarui firmware vendor ke versi terbaru untuk menambal CVE.")
+        if (recommendations.isEmpty() && level != HostRiskLevel.SAFE) recommendations.add("Pantau lalu lintas perangkat di jaringan lab secara berkala.")
+
         return HostRiskProfile(
             level = level,
             score = score.coerceAtMost(100),
-            highlights = highlights
+            highlights = highlights,
+            summary = summary,
+            recommendations = recommendations
         )
     }
 
