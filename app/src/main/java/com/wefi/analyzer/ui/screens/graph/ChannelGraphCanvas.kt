@@ -200,17 +200,23 @@ fun ChannelGraphCanvas(
                     topY = paddingTop,
                     bottomY = baseY,
                     color = BlynkBlue,
-                    typeface = customTypeface
+                    typeface = customTypeface,
+                    width = width,
+                    paddingLeft = paddingLeft,
+                    paddingRight = paddingRight
                 )
             }
 
             // 5. Draw Label on Peak (SSID ~Xm)
             val labelText = "${ap.displaySsid} (${ap.formattedDistance})"
             val labelY = (peakY - 6.dp.toPx()).coerceAtLeast(paddingTop + 14.dp.toPx())
+            val minLabelX = paddingLeft + 30.dp.toPx()
+            val maxLabelX = (width - paddingRight - 30.dp.toPx()).coerceAtLeast(minLabelX)
+            val labelX = centerX.coerceIn(minLabelX, maxLabelX)
 
             drawContext.canvas.nativeCanvas.drawText(
                 labelText,
-                centerX,
+                labelX,
                 labelY,
                 Paint().apply {
                     this.color = if (isConnected) BlynkBlue.toArgb() else textPrimaryColor
@@ -231,7 +237,10 @@ private fun DrawScope.drawConnectedPlumbLine(
     topY: Float,
     bottomY: Float,
     color: Color,
-    typeface: Typeface
+    typeface: Typeface,
+    width: Float,
+    paddingLeft: Float,
+    paddingRight: Float
 ) {
     val dashEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 8f), 0f)
 
@@ -261,11 +270,14 @@ private fun DrawScope.drawConnectedPlumbLine(
         center = Offset(centerX, peakY)
     )
 
-    // Floating Badge Pill at top of the plumb line
+    // Floating Badge Pill at top of the plumb line with boundary clamping
     val badgeWidth = 120.dp.toPx()
     val badgeHeight = 22.dp.toPx()
-    val badgeLeft = centerX - (badgeWidth / 2f)
-    val badgeTop = topY - badgeHeight - 6.dp.toPx()
+    val minBadgeLeft = paddingLeft + 4.dp.toPx()
+    val maxBadgeLeft = (width - paddingRight - badgeWidth - 4.dp.toPx()).coerceAtLeast(minBadgeLeft)
+    val badgeLeft = (centerX - (badgeWidth / 2f)).coerceIn(minBadgeLeft, maxBadgeLeft)
+    val badgeTop = (topY - badgeHeight - 6.dp.toPx()).coerceAtLeast(4.dp.toPx())
+    val badgeCenterX = badgeLeft + (badgeWidth / 2f)
 
     drawRoundRect(
         color = BlynkBlueTint,
@@ -287,12 +299,12 @@ private fun DrawScope.drawConnectedPlumbLine(
     drawCircle(
         color = color,
         radius = 3.dp.toPx(),
-        center = Offset(centerX - 36.dp.toPx(), dotCenterY)
+        center = Offset(badgeCenterX - 36.dp.toPx(), dotCenterY)
     )
 
     drawContext.canvas.nativeCanvas.drawText(
         "TERHUBUNG",
-        centerX + 4.dp.toPx(),
+        badgeCenterX + 4.dp.toPx(),
         badgeTop + (badgeHeight * 0.68f),
         Paint().apply {
             this.color = color.toArgb()
