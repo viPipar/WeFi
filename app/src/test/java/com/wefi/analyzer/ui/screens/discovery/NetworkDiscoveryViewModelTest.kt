@@ -1,5 +1,7 @@
 package com.wefi.analyzer.ui.screens.discovery
 
+import com.wefi.analyzer.domain.model.AuthPostureResult
+import com.wefi.analyzer.domain.model.AuthStatus
 import com.wefi.analyzer.domain.model.BannerInfo
 import com.wefi.analyzer.domain.model.CveMatch
 import com.wefi.analyzer.domain.model.DiscoveredHost
@@ -303,6 +305,29 @@ class NetworkDiscoveryViewModelTest {
         assertEquals(1, state.wirelessAuditItems.size)
         assertEquals("Rogue_Twin", state.wirelessAuditItems[0].ssid)
     }
+
+    @Test
+    fun testHostAuthPosture_updatesStateCorrectly() = runTest {
+        val host = DiscoveredHost(ip = "192.168.1.50")
+        fakeRepo.stubAuthResult = AuthPostureResult(
+            ip = "192.168.1.50",
+            port = 554,
+            protocol = "RTSP",
+            status = AuthStatus.PROTECTED_CREDENTIALS,
+            httpStatusCode = 401,
+            description = "Stream RTSP terlindungi"
+        )
+
+        viewModel.testHostAuthPosture(host, 554, "RTSP")
+        advanceUntilIdle()
+
+        val authMap = viewModel.authPostureState.value
+        val result = authMap["192.168.1.50:554"]
+        assertNotNull(result)
+        assertEquals(AuthStatus.PROTECTED_CREDENTIALS, result!!.status)
+        assertEquals(401, result.httpStatusCode)
+        assertFalse(viewModel.isTestingAuth.value)
+    }
 }
 
 private class FakeNetworkDiscoveryRepository : NetworkDiscoveryRepository {
@@ -376,6 +401,19 @@ private class FakeNetworkDiscoveryRepository : NetworkDiscoveryRepository {
     override fun exportReportJson(report: DiscoveryReport): String = "{\"report\": \"STUB_JSON_REPORT\"}"
 
     override fun exportReportText(report: DiscoveryReport): String = "STUB_TEXT_REPORT"
+
+    var stubAuthResult: AuthPostureResult? = null
+
+    override suspend fun testAuthPosture(hostIp: String, port: Int, protocolHint: String?): AuthPostureResult {
+        return stubAuthResult ?: AuthPostureResult(
+            ip = hostIp,
+            port = port,
+            protocol = protocolHint ?: if (port == 554) "RTSP" else "HTTP",
+            status = AuthStatus.UNPROTECTED_EXPOSURE,
+            httpStatusCode = 200,
+            description = "Stub auth test result"
+        )
+    }
 
     override fun teardown() {}
 }

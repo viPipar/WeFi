@@ -99,3 +99,23 @@ data class DiscoveryReport(
     val hosts: List<DiscoveredHost>,
     val isClientIsolationSuspected: Boolean
 )
+
+enum class AuthStatus(val label: String) {
+    UNPROTECTED_EXPOSURE("Terbuka Bebas (Tanpa Password)"),
+    PROTECTED_CREDENTIALS("Terlindungi (Memerlukan Kredensial)"),
+    CONNECTION_REFUSED("Koneksi Ditolak (Port Tertutup)"),
+    TIMEOUT("Waktu Habis (Timeout)"),
+    UNKNOWN("Status Tidak Dikenal")
+}
+
+data class AuthPostureResult(
+    val ip: String,
+    val port: Int,
+    val protocol: String, // "HTTP", "HTTPS", "RTSP"
+    val status: AuthStatus,
+    val httpStatusCode: Int? = null,
+    val authHeader: String? = null,
+    val serverBanner: String? = null,
+    val description: String,
+    val timestamp: Long = System.currentTimeMillis()
+)

@@ -43,4 +43,31 @@ class NetworkDiscoveryLogicTest {
         assertEquals(AssetCategory.STORAGE_NAS, repo.classifyAssetCategory(nasHost))
         assertTrue(repo.hasCleartextManagement(nasHost))
     }
+
+    @Test
+    fun testAuthStatusAndPostureResult_domainIntegrity() {
+        val unprotectedHttp = com.wefi.analyzer.domain.model.AuthPostureResult(
+            ip = "192.168.1.1",
+            port = 80,
+            protocol = "HTTP",
+            status = com.wefi.analyzer.domain.model.AuthStatus.UNPROTECTED_EXPOSURE,
+            httpStatusCode = 200,
+            description = "Web portal terbuka langsung"
+        )
+        assertEquals(com.wefi.analyzer.domain.model.AuthStatus.UNPROTECTED_EXPOSURE, unprotectedHttp.status)
+        assertEquals(200, unprotectedHttp.httpStatusCode)
+        assertEquals("HTTP", unprotectedHttp.protocol)
+
+        val protectedRtsp = com.wefi.analyzer.domain.model.AuthPostureResult(
+            ip = "192.168.1.50",
+            port = 554,
+            protocol = "RTSP",
+            status = com.wefi.analyzer.domain.model.AuthStatus.PROTECTED_CREDENTIALS,
+            httpStatusCode = 401,
+            authHeader = "Digest realm=\"CCTV-LAB\"",
+            description = "Stream RTSP terkunci"
+        )
+        assertEquals(com.wefi.analyzer.domain.model.AuthStatus.PROTECTED_CREDENTIALS, protectedRtsp.status)
+        assertEquals("Digest realm=\"CCTV-LAB\"", protectedRtsp.authHeader)
+    }
 }

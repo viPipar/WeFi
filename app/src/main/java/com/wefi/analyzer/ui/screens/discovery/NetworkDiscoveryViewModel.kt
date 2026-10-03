@@ -2,6 +2,8 @@ package com.wefi.analyzer.ui.screens.discovery
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.wefi.analyzer.domain.model.AuthPostureResult
+import com.wefi.analyzer.domain.model.AuthStatus
 import com.wefi.analyzer.domain.model.DiscoveredHost
 import com.wefi.analyzer.domain.model.HostRiskLevel
 import com.wefi.analyzer.domain.model.PmfMode
@@ -40,6 +42,12 @@ class NetworkDiscoveryViewModel(
 
     private val _isDeepScanningHost = MutableStateFlow(false)
     val isDeepScanningHost: StateFlow<Boolean> = _isDeepScanningHost.asStateFlow()
+
+    private val _authPostureState = MutableStateFlow<Map<String, AuthPostureResult>>(emptyMap())
+    val authPostureState: StateFlow<Map<String, AuthPostureResult>> = _authPostureState.asStateFlow()
+
+    private val _isTestingAuth = MutableStateFlow(false)
+    val isTestingAuth: StateFlow<Boolean> = _isTestingAuth.asStateFlow()
 
     init {
         wifiScannerRepository?.let { scanner ->
@@ -145,6 +153,32 @@ class NetworkDiscoveryViewModel(
                 } else current
             }
             _isDeepScanningHost.value = false
+        }
+    }
+
+    fun testHostAuthPosture(host: DiscoveredHost, port: Int, protocolHint: String? = null) {
+        if (_isTestingAuth.value) return
+        viewModelScope.launch {
+            _isTestingAuth.value = true
+            val key = "${host.ip}:$port"
+            try {
+                val result = repository.testAuthPosture(host.ip, port, protocolHint)
+                _authPostureState.update { current ->
+                    current + (key to result)
+                }
+            } catch (e: Exception) {
+                _authPostureState.update { current ->
+                    current + (key to AuthPostureResult(
+                        ip = host.ip,
+                        port = port,
+                        protocol = protocolHint ?: if (port == 554) "RTSP" else "HTTP",
+                        status = AuthStatus.UNKNOWN,
+                        description = "Gagal menguji autentikasi: ${e.message}"
+                    ))
+                }
+            } finally {
+                _isTestingAuth.value = false
+            }
         }
     }
 

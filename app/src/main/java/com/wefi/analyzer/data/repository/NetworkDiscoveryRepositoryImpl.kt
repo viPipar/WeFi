@@ -8,6 +8,8 @@ import android.os.Build
 import android.util.Log
 import com.wefi.analyzer.data.util.NetworkSafetyThrottler
 import com.wefi.analyzer.domain.model.AssetCategory
+import com.wefi.analyzer.domain.model.AuthPostureResult
+import com.wefi.analyzer.domain.model.AuthStatus
 import com.wefi.analyzer.domain.model.BannerInfo
 import com.wefi.analyzer.domain.model.CveMatch
 import com.wefi.analyzer.domain.model.DiscoveredHost
@@ -19,6 +21,11 @@ import com.wefi.analyzer.domain.model.PortStatus
 import com.wefi.analyzer.domain.model.ServiceInfo
 import com.wefi.analyzer.domain.model.SubnetInfo
 import com.wefi.analyzer.domain.repository.NetworkDiscoveryRepository
+import javax.net.ssl.SSLContext
+import javax.net.ssl.TrustManager
+import javax.net.ssl.X509TrustManager
+import java.security.SecureRandom
+import java.security.cert.X509Certificate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose
@@ -234,7 +241,7 @@ class NetworkDiscoveryRepositoryImpl(
                         for (p in probePorts) {
                             try {
                                 Socket().use { socket ->
-                                    socket.connect(InetSocketAddress(hostIp, p), 200)
+                                    socket.connect(InetSocketAddress(hostIp, p), 600)
                                     isAlive = true
                                 }
                             } catch (e: Exception) {
@@ -287,7 +294,7 @@ class NetworkDiscoveryRepositoryImpl(
                     var status = PortStatus.TIMEOUT
                     try {
                         Socket().use { socket ->
-                            socket.connect(InetSocketAddress(hostIp, port), 500)
+                            socket.connect(InetSocketAddress(hostIp, port), 1200)
                             status = PortStatus.OPEN
                         }
                     } catch (ste: SocketTimeoutException) {
@@ -694,6 +701,47 @@ class NetworkDiscoveryRepositoryImpl(
                     count++
                 }
 
+                if (serverHeader != null || xPoweredBy != null) {
+                    return BannerInfo(
+                        rawBanner = sb.toString().trim(),
+                        server = serverHeader,
+                        xPoweredBy = xPoweredBy
+                    )
+                }
+            }
+        } catch (ignored: Exception) {
+        }
+
+        // Fallback GET / HTTP/1.1 untuk embedded router/CCTV yang menolak metode HEAD
+        try {
+            Socket().use { socket ->
+                socket.soTimeout = 2500
+                socket.connect(InetSocketAddress(hostIp, port), 2000)
+
+                val writer = OutputStreamWriter(socket.getOutputStream(), "UTF-8")
+                writer.write("GET / HTTP/1.1\r\nHost: $hostIp\r\nRange: bytes=0-1024\r\nUser-Agent: WeFi-LabAudit/1.0\r\nConnection: close\r\n\r\n")
+                writer.flush()
+
+                val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+                val sb = StringBuilder()
+                var serverHeader: String? = null
+                var xPoweredBy: String? = null
+
+                var line: String? = reader.readLine()
+                var count = 0
+                while (line != null && count < 25) {
+                    sb.append(line).append("\n")
+                    val lower = line.lowercase()
+                    if (lower.startsWith("server:")) {
+                        serverHeader = line.substring(7).trim()
+                    } else if (lower.startsWith("x-powered-by:")) {
+                        xPoweredBy = line.substring(13).trim()
+                    }
+                    if (line.isEmpty()) break
+                    line = reader.readLine()
+                    count++
+                }
+
                 return BannerInfo(
                     rawBanner = sb.toString().trim(),
                     server = serverHeader,
@@ -1028,6 +1076,297 @@ class NetworkDiscoveryRepositoryImpl(
             appendLine("==================================================")
             appendLine("Laporan ini dihasilkan untuk kebutuhan edukasi laboratorium.")
             appendLine("Tidak ada muatan eksploitasi yang digunakan dalam pengujian ini.")
+        }
+    }
+
+    override suspend fun testAuthPosture(
+        hostIp: String,
+        port: Int,
+        protocolHint: String?
+    ): AuthPostureResult = withContext(Dispatchers.IO) {
+        val isRtsp = (port == 554 || protocolHint?.equals("RTSP", ignoreCase = true) == true)
+        val isHttps = (port == 443 || port == 8443 || protocolHint?.equals("HTTPS", ignoreCase = true) == true)
+
+        if (isRtsp) {
+            testRtspAuthPosture(hostIp, port)
+        } else {
+            testHttpAuthPosture(hostIp, port, isHttps)
+        }
+    }
+
+    private fun testRtspAuthPosture(hostIp: String, port: Int): AuthPostureResult {
+        try {
+            Socket().use { socket ->
+                socket.soTimeout = 3000
+                socket.connect(InetSocketAddress(hostIp, port), 2500)
+
+                val writer = OutputStreamWriter(socket.getOutputStream(), "UTF-8")
+                writer.write("OPTIONS * RTSP/1.0\r\nCSeq: 1\r\nUser-Agent: WeFi-LabAudit/1.0\r\n\r\n")
+                writer.flush()
+
+                val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+                val firstLine = reader.readLine() ?: ""
+                var authHeader: String? = null
+                var serverHeader: String? = null
+
+                var line: String? = reader.readLine()
+                var count = 0
+                while (line != null && count < 25) {
+                    val lower = line.lowercase()
+                    if (lower.startsWith("www-authenticate:")) {
+                        authHeader = line.substring(17).trim()
+                    } else if (lower.startsWith("server:")) {
+                        serverHeader = line.substring(7).trim()
+                    }
+                    if (line.isEmpty()) break
+                    line = reader.readLine()
+                    count++
+                }
+
+                val isOptions200 = firstLine.contains("200 OK")
+                var describeStatusCode = 200
+
+                if (isOptions200) {
+                    try {
+                        writer.write("DESCRIBE rtsp://$hostIp:$port/ RTSP/1.0\r\nCSeq: 2\r\nAccept: application/sdp\r\nUser-Agent: WeFi-LabAudit/1.0\r\n\r\n")
+                        writer.flush()
+                        val describeLine = reader.readLine() ?: ""
+                        if (describeLine.contains("401") || describeLine.contains("Unauthorized")) {
+                            describeStatusCode = 401
+                        }
+                    } catch (ignored: Exception) {
+                    }
+                }
+
+                return when {
+                    firstLine.contains("401") || describeStatusCode == 401 -> {
+                        AuthPostureResult(
+                            ip = hostIp,
+                            port = port,
+                            protocol = "RTSP",
+                            status = AuthStatus.PROTECTED_CREDENTIALS,
+                            httpStatusCode = 401,
+                            authHeader = authHeader ?: "Digest/Basic realm",
+                            serverBanner = serverHeader,
+                            description = "Stream RTSP terkunci. Kamera meminta kredensial resmi sebelum mengizinkan pemutaran video."
+                        )
+                    }
+                    isOptions200 -> {
+                        AuthPostureResult(
+                            ip = hostIp,
+                            port = port,
+                            protocol = "RTSP",
+                            status = AuthStatus.UNPROTECTED_EXPOSURE,
+                            httpStatusCode = 200,
+                            serverBanner = serverHeader,
+                            description = "PERINGATAN KRITIS: Stream RTSP terbuka bebas tanpa autentikasi! Feed kamera dapat diputar langsung di jaringan lokal."
+                        )
+                    }
+                    else -> {
+                        AuthPostureResult(
+                            ip = hostIp,
+                            port = port,
+                            protocol = "RTSP",
+                            status = AuthStatus.UNKNOWN,
+                            description = "Respon RTSP: ${firstLine.take(60)}"
+                        )
+                    }
+                }
+            }
+        } catch (ste: SocketTimeoutException) {
+            return AuthPostureResult(
+                ip = hostIp,
+                port = port,
+                protocol = "RTSP",
+                status = AuthStatus.TIMEOUT,
+                description = "Waktu koneksi RTSP habis (Timeout). Kamera mungkin memblokir port atau tidak merespons."
+            )
+        } catch (e: Exception) {
+            val isRefused = e.message?.contains("refused", ignoreCase = true) == true
+            return AuthPostureResult(
+                ip = hostIp,
+                port = port,
+                protocol = "RTSP",
+                status = if (isRefused) AuthStatus.CONNECTION_REFUSED else AuthStatus.UNKNOWN,
+                description = if (isRefused) "Koneksi ditolak (Port RTSP $port ditutup)." else "Gagal menguji RTSP: ${e.message}"
+            )
+        }
+    }
+
+    private fun createInsecureSslSocket(hostIp: String, port: Int, timeoutMs: Int): Socket {
+        val trustAllCerts = arrayOf<TrustManager>(object : X509TrustManager {
+            override fun checkClientTrusted(chain: Array<X509Certificate>?, authType: String?) {}
+            override fun checkServerTrusted(chain: Array<X509Certificate>?, authType: String?) {}
+            override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
+        })
+        val sslContext = SSLContext.getInstance("TLS")
+        sslContext.init(null, trustAllCerts, SecureRandom())
+        val socket = sslContext.socketFactory.createSocket()
+        socket.soTimeout = timeoutMs
+        socket.connect(InetSocketAddress(hostIp, port), timeoutMs)
+        return socket
+    }
+
+    private fun testHttpAuthPosture(hostIp: String, port: Int, isHttps: Boolean): AuthPostureResult {
+        val protocol = if (isHttps) "HTTPS" else "HTTP"
+        try {
+            val socket = if (isHttps) {
+                createInsecureSslSocket(hostIp, port, 3000)
+            } else {
+                Socket().apply {
+                    soTimeout = 3000
+                    connect(InetSocketAddress(hostIp, port), 2500)
+                }
+            }
+
+            socket.use { s ->
+                val writer = OutputStreamWriter(s.getOutputStream(), "UTF-8")
+                writer.write("GET / HTTP/1.1\r\nHost: $hostIp\r\nUser-Agent: Mozilla/5.0 (Android; WeFi-LabAudit)\r\nAccept: */*\r\nConnection: close\r\n\r\n")
+                writer.flush()
+
+                val reader = BufferedReader(InputStreamReader(s.getInputStream()))
+                val statusLine = reader.readLine() ?: ""
+                var authHeader: String? = null
+                var serverHeader: String? = null
+                var locationHeader: String? = null
+
+                val bodyPreview = StringBuilder()
+                var line: String? = reader.readLine()
+                var isBody = false
+                var count = 0
+
+                while (line != null && count < 60) {
+                    if (!isBody) {
+                        if (line.isEmpty()) {
+                            isBody = true
+                        } else {
+                            val lower = line.lowercase()
+                            if (lower.startsWith("www-authenticate:")) {
+                                authHeader = line.substring(17).trim()
+                            } else if (lower.startsWith("server:")) {
+                                serverHeader = line.substring(7).trim()
+                            } else if (lower.startsWith("location:")) {
+                                locationHeader = line.substring(9).trim()
+                            }
+                        }
+                    } else {
+                        bodyPreview.append(line).append(" ")
+                    }
+                    line = reader.readLine()
+                    count++
+                }
+
+                val bodyLower = bodyPreview.toString().lowercase()
+                val statusCode = statusLine.split(" ").getOrNull(1)?.toIntOrNull()
+
+                return when {
+                    statusCode == 401 -> {
+                        AuthPostureResult(
+                            ip = hostIp,
+                            port = port,
+                            protocol = protocol,
+                            status = AuthStatus.PROTECTED_CREDENTIALS,
+                            httpStatusCode = 401,
+                            authHeader = authHeader,
+                            serverBanner = serverHeader,
+                            description = "Terlindungi: Memerlukan Autentikasi HTTP 401 (${authHeader ?: "Basic/Digest challenge"})."
+                        )
+                    }
+                    statusCode == 403 -> {
+                        AuthPostureResult(
+                            ip = hostIp,
+                            port = port,
+                            protocol = protocol,
+                            status = AuthStatus.PROTECTED_CREDENTIALS,
+                            httpStatusCode = 403,
+                            serverBanner = serverHeader,
+                            description = "Akses ditolak (HTTP 403 Forbidden). Web portal dilindungi oleh kebijakan otorisasi/login."
+                        )
+                    }
+                    statusCode in 300..399 -> {
+                        val isLoginRedirect = locationHeader?.lowercase()?.let {
+                            it.contains("login") || it.contains("auth") || it.contains("signin")
+                        } == true
+                        if (isLoginRedirect) {
+                            AuthPostureResult(
+                                ip = hostIp,
+                                port = port,
+                                protocol = protocol,
+                                status = AuthStatus.PROTECTED_CREDENTIALS,
+                                httpStatusCode = statusCode,
+                                serverBanner = serverHeader,
+                                description = "Dialihkan ke halaman autentikasi/login resmi (${locationHeader ?: "/login"})."
+                            )
+                        } else {
+                            AuthPostureResult(
+                                ip = hostIp,
+                                port = port,
+                                protocol = protocol,
+                                status = AuthStatus.UNPROTECTED_EXPOSURE,
+                                httpStatusCode = statusCode,
+                                serverBanner = serverHeader,
+                                description = "Dialihkan langsung ke dashboard internal (${locationHeader ?: "/"}) tanpa tantangan login."
+                            )
+                        }
+                    }
+                    statusCode in 200..299 -> {
+                        val hasPasswordForm = bodyLower.contains("type=\"password\"") ||
+                                bodyLower.contains("type='password'") ||
+                                bodyLower.contains("loginform") ||
+                                bodyLower.contains("name=\"password\"") ||
+                                bodyLower.contains("masuk ke router")
+                        if (hasPasswordForm) {
+                            AuthPostureResult(
+                                ip = hostIp,
+                                port = port,
+                                protocol = protocol,
+                                status = AuthStatus.PROTECTED_CREDENTIALS,
+                                httpStatusCode = statusCode,
+                                serverBanner = serverHeader,
+                                description = "Web form login terdeteksi. Portal terlindungi oleh form autentikasi kredensial."
+                            )
+                        } else {
+                            AuthPostureResult(
+                                ip = hostIp,
+                                port = port,
+                                protocol = protocol,
+                                status = AuthStatus.UNPROTECTED_EXPOSURE,
+                                httpStatusCode = statusCode,
+                                serverBanner = serverHeader,
+                                description = "PERINGATAN KRITIS: Web portal terbuka langsung tanpa form login atau proteksi password (HTTP 200 OK)!"
+                            )
+                        }
+                    }
+                    else -> {
+                        AuthPostureResult(
+                            ip = hostIp,
+                            port = port,
+                            protocol = protocol,
+                            status = AuthStatus.UNKNOWN,
+                            httpStatusCode = statusCode,
+                            serverBanner = serverHeader,
+                            description = "Respon server: ${statusLine.ifEmpty { "Koneksi selesai tanpa respon status" }}"
+                        )
+                    }
+                }
+            }
+        } catch (ste: SocketTimeoutException) {
+            return AuthPostureResult(
+                ip = hostIp,
+                port = port,
+                protocol = protocol,
+                status = AuthStatus.TIMEOUT,
+                description = "Waktu koneksi $protocol habis (Timeout). Port mungkin difilter oleh firewall."
+            )
+        } catch (e: Exception) {
+            val isRefused = e.message?.contains("refused", ignoreCase = true) == true
+            return AuthPostureResult(
+                ip = hostIp,
+                port = port,
+                protocol = protocol,
+                status = if (isRefused) AuthStatus.CONNECTION_REFUSED else AuthStatus.UNKNOWN,
+                description = if (isRefused) "Koneksi ditolak (Port $port ditutup)." else "Gagal menguji $protocol: ${e.message}"
+            )
         }
     }
 

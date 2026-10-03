@@ -38,13 +38,17 @@ import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Language
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Videocam
 import androidx.compose.material.icons.rounded.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -57,9 +61,13 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
+import com.wefi.analyzer.domain.model.AuthPostureResult
+import com.wefi.analyzer.domain.model.AuthStatus
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -99,6 +107,8 @@ fun NetworkDiscoveryScreen(
     val uiState by viewModel.uiState.collectAsState()
     val selectedHost by viewModel.selectedHostForDetail.collectAsState()
     val isDeepScanning by viewModel.isDeepScanningHost.collectAsState()
+    val authPostureState by viewModel.authPostureState.collectAsState()
+    val isTestingAuth by viewModel.isTestingAuth.collectAsState()
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
     var isLimitationsExpanded by remember { mutableStateOf(false) }
@@ -278,8 +288,11 @@ fun NetworkDiscoveryScreen(
         HostDetailBottomSheet(
             host = selectedHost!!,
             isDeepScanning = isDeepScanning,
+            authPostureState = authPostureState,
+            isTestingAuth = isTestingAuth,
             onDismiss = { viewModel.selectHostForDetail(null) },
-            onDeepScan = { viewModel.scanHostDeep(selectedHost!!) }
+            onDeepScan = { viewModel.scanHostDeep(selectedHost!!) },
+            onTestAuthPosture = { port, proto -> viewModel.testHostAuthPosture(selectedHost!!, port, proto) }
         )
     }
 }
@@ -869,8 +882,11 @@ private fun DiscoveredHostCard(
 private fun HostDetailBottomSheet(
     host: DiscoveredHost,
     isDeepScanning: Boolean,
+    authPostureState: Map<String, AuthPostureResult>,
+    isTestingAuth: Boolean,
     onDismiss: () -> Unit,
-    onDeepScan: () -> Unit
+    onDeepScan: () -> Unit,
+    onTestAuthPosture: (port: Int, protocolHint: String?) -> Unit
 ) {
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
@@ -893,7 +909,17 @@ private fun HostDetailBottomSheet(
         HostRiskLevel.SAFE -> "AMAN / NORMAL"
     }
 
-    val webPort = host.openPorts.firstOrNull { it.port in listOf(80, 443, 8080, 8443) }?.port
+    val webPort = host.openPorts.firstOrNull { it.port in listOf(80, 443, 8080, 8443, 8000) }?.port
+    var showWebAdminDialog by remember { mutableStateOf(false) }
+    var showCctvDialog by remember { mutableStateOf(false) }
+    var selectedAuthPort by remember { mutableStateOf(webPort ?: if (host.openPorts.any { it.port == 554 }) 554 else 80) }
+    var customWebPortInput by remember { mutableStateOf(webPort?.toString() ?: "80") }
+    var customScheme by remember { mutableStateOf(if (webPort == 443 || webPort == 8443) "https" else "http") }
+
+    var cctvChannelPreset by remember { mutableStateOf("Generic") }
+    var cctvCustomPath by remember { mutableStateOf("live/ch0") }
+    var cctvUsername by remember { mutableStateOf("") }
+    var cctvPassword by remember { mutableStateOf("") }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -1131,28 +1157,16 @@ private fun HostDetailBottomSheet(
                     }
                 }
 
-                // Web Admin Button (if port open)
-                if (webPort != null) {
-                    OutlinedButton(
-                        onClick = {
-                            val scheme = if (webPort == 443 || webPort == 8443) "https" else "http"
-                            val portSuffix = if (webPort == 80 || webPort == 443) "" else ":$webPort"
-                            val url = "$scheme://${host.ip}$portSuffix"
-                            try {
-                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                                context.startActivity(intent)
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "Tidak dapat membuka browser: ${e.message}", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        shape = RoundedCornerShape(10.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = BlynkBlueDark),
-                        border = BorderStroke(1.dp, BlynkBlue.copy(alpha = 0.5f))
-                    ) {
-                        Icon(imageVector = Icons.Rounded.Language, contentDescription = null, modifier = Modifier.size(15.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(text = "Web Admin", fontSize = 12.sp)
-                    }
+                // Web Admin Button (Always Accessible with Port Selector)
+                OutlinedButton(
+                    onClick = { showWebAdminDialog = true },
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = BlynkBlueDark),
+                    border = BorderStroke(1.dp, BlynkBlue.copy(alpha = 0.5f))
+                ) {
+                    Icon(imageVector = Icons.Rounded.Language, contentDescription = null, modifier = Modifier.size(15.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(text = "Web Admin", fontSize = 12.sp)
                 }
 
                 // Copy Brief Button
@@ -1182,6 +1196,237 @@ private fun HostDetailBottomSheet(
                     Icon(imageVector = Icons.Rounded.ContentCopy, contentDescription = null, modifier = Modifier.size(15.dp))
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(text = "Salin", fontSize = 12.sp)
+                }
+            }
+
+            // Uji Keterbukaan Autentikasi (Auth Posture Card)
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(imageVector = Icons.Rounded.Security, contentDescription = null, tint = BlynkBlue, modifier = Modifier.size(18.dp))
+                            Text(
+                                text = "Uji Keterbukaan Akses (Auth Posture)",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+
+                    Text(
+                        text = "Verifikasi pasif apakah portal/stream terbuka tanpa autentikasi (unauthenticated exposure) atau dilindungi autentikasi resmi.",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    // Port selector chips
+                    val testablePorts = (host.openPorts.map { it.port } + listOf(80, 443, 554, 8000)).distinct().sorted()
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        testablePorts.take(6).forEach { p ->
+                            Surface(
+                                modifier = Modifier.clickable { selectedAuthPort = p },
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (selectedAuthPort == p) BlynkBlue else MaterialTheme.colorScheme.surfaceVariant
+                            ) {
+                                Text(
+                                    text = if (p == 554) "Port 554 (RTSP)" else "Port $p",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = if (selectedAuthPort == p) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    // Test Action Button
+                    Button(
+                        onClick = {
+                            val proto = if (selectedAuthPort == 554) "RTSP" else if (selectedAuthPort in listOf(443, 8443)) "HTTPS" else "HTTP"
+                            onTestAuthPosture(selectedAuthPort, proto)
+                        },
+                        enabled = !isTestingAuth,
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = BlynkBlue, contentColor = Color.White),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        if (isTestingAuth) {
+                            CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = Color.White)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(text = "Menguji Handshake Autentikasi...", fontSize = 12.sp)
+                        } else {
+                            Icon(imageVector = Icons.Rounded.Shield, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(text = "Uji Keterbukaan Port $selectedAuthPort", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    // Result display if any
+                    val currentResult = authPostureState["${host.ip}:$selectedAuthPort"]
+                    if (currentResult != null) {
+                        val isUnprotected = currentResult.status == AuthStatus.UNPROTECTED_EXPOSURE
+                        val isProtected = currentResult.status == AuthStatus.PROTECTED_CREDENTIALS
+                        val cardBg = when {
+                            isUnprotected -> QualityRed.copy(alpha = 0.12f)
+                            isProtected -> QualityGreen.copy(alpha = 0.12f)
+                            else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                        }
+                        val borderColor = when {
+                            isUnprotected -> QualityRed
+                            isProtected -> QualityGreen
+                            else -> MaterialTheme.colorScheme.outline
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = cardBg,
+                            border = BorderStroke(1.dp, borderColor),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Icon(
+                                        imageVector = if (isUnprotected) Icons.Rounded.LockOpen else Icons.Rounded.Lock,
+                                        contentDescription = null,
+                                        tint = if (isUnprotected) QualityRed else if (isProtected) QualityGreen else BlynkBlue,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        text = when {
+                                            isUnprotected -> "PERINGATAN: TERBUKA TANPA PASSWORD"
+                                            isProtected -> "TERLINDUNGI DENGAN PASSWORD"
+                                            else -> currentResult.status.label
+                                        },
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isUnprotected) QualityRed else if (isProtected) QualityGreen else MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                                Text(
+                                    text = currentResult.description,
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                currentResult.serverBanner?.let { srv ->
+                                    Text(
+                                        text = "Server Banner: $srv",
+                                        fontSize = 10.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Kartu Akses & Monitoring CCTV Lab (Isolasi)
+            val isCctvDevice = host.probableDeviceType.contains("CCTV", ignoreCase = true) ||
+                    host.assetCategory == AssetCategory.SURVEILLANCE_CCTV ||
+                    host.openPorts.any { it.port in listOf(554, 3702, 37777, 8000) }
+
+            if (isCctvDevice) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, QualityAmber.copy(alpha = 0.5f))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Surface(shape = CircleShape, color = QualityAmber.copy(alpha = 0.15f), modifier = Modifier.size(32.dp)) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(imageVector = Icons.Rounded.Videocam, contentDescription = null, tint = QualityAmber, modifier = Modifier.size(18.dp))
+                                }
+                            }
+                            Column {
+                                Text(
+                                    text = "Akses & Monitoring CCTV Lab",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "Monitoring feed RTSP & konsol kamera di lab pribadi",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        // RTSP Posture Status if already checked
+                        val rtspResult = authPostureState["${host.ip}:554"]
+                        if (rtspResult != null) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (rtspResult.status == AuthStatus.UNPROTECTED_EXPOSURE) QualityRed.copy(alpha = 0.1f) else QualityGreen.copy(alpha = 0.1f),
+                                border = BorderStroke(1.dp, if (rtspResult.status == AuthStatus.UNPROTECTED_EXPOSURE) QualityRed else QualityGreen),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (rtspResult.status == AuthStatus.UNPROTECTED_EXPOSURE) Icons.Rounded.LockOpen else Icons.Rounded.Lock,
+                                        contentDescription = null,
+                                        tint = if (rtspResult.status == AuthStatus.UNPROTECTED_EXPOSURE) QualityRed else QualityGreen,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                    Text(
+                                        text = if (rtspResult.status == AuthStatus.UNPROTECTED_EXPOSURE) "RTSP Port 554: Stream Terbuka Bebas!" else "RTSP Port 554: Memerlukan Kredensial",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (rtspResult.status == AuthStatus.UNPROTECTED_EXPOSURE) QualityRed else QualityGreen
+                                    )
+                                }
+                            }
+                        }
+
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(
+                                onClick = { onTestAuthPosture(554, "RTSP") },
+                                enabled = !isTestingAuth,
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = QualityAmber),
+                                border = BorderStroke(1.dp, QualityAmber.copy(alpha = 0.6f))
+                            ) {
+                                Icon(imageVector = Icons.Rounded.Shield, contentDescription = null, modifier = Modifier.size(15.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(text = "Uji RTSP", fontSize = 12.sp)
+                            }
+
+                            Button(
+                                onClick = { showCctvDialog = true },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = QualityAmber, contentColor = Color.White)
+                            ) {
+                                Icon(imageVector = Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(text = "Live Stream", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
                 }
             }
 
@@ -1361,6 +1606,225 @@ private fun HostDetailBottomSheet(
                 }
             }
         }
+    }
+
+    if (showWebAdminDialog) {
+        val parsedPort = customWebPortInput.toIntOrNull() ?: 80
+        val isHttps = customScheme == "https" || parsedPort == 443 || parsedPort == 8443
+        val currentScheme = if (isHttps) "https" else "http"
+        val portSuffix = if ((currentScheme == "http" && parsedPort == 80) || (currentScheme == "https" && parsedPort == 443)) "" else ":$parsedPort"
+        val previewUrl = "$currentScheme://${host.ip}$portSuffix"
+
+        AlertDialog(
+            onDismissRequest = { showWebAdminDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(imageVector = Icons.Rounded.Language, contentDescription = null, tint = BlynkBlue)
+                    Text(text = "Akses Web Admin Lab", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "Target Host: ${host.ip}",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Text(text = "Pilih / Masukkan Port Web Admin:", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf("80", "443", "8080", "8000", "8443").forEach { pStr ->
+                            Surface(
+                                modifier = Modifier.clickable {
+                                    customWebPortInput = pStr
+                                    customScheme = if (pStr == "443" || pStr == "8443") "https" else "http"
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (customWebPortInput == pStr) BlynkBlue else MaterialTheme.colorScheme.surfaceVariant
+                            ) {
+                                Text(
+                                    text = when (pStr) {
+                                        "80" -> "80 (HTTP)"
+                                        "443" -> "443 (HTTPS)"
+                                        "8080" -> "8080 (Alt)"
+                                        "8000" -> "8000 (CCTV/Hik)"
+                                        "8443" -> "8443 (S-Alt)"
+                                        else -> pStr
+                                    },
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = if (customWebPortInput == pStr) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = customWebPortInput,
+                        onValueChange = { customWebPortInput = it.filter { char -> char.isDigit() }.take(5) },
+                        label = { Text("Port Kustom") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "URL: $previewUrl",
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = BlynkBlueDark,
+                            modifier = Modifier.padding(8.dp)
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        try {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(previewUrl))
+                            context.startActivity(intent)
+                            showWebAdminDialog = false
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Gagal membuka browser: ${e.message}", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = BlynkBlue)
+                ) {
+                    Text("Buka Browser", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    onTestAuthPosture(parsedPort, if (isHttps) "HTTPS" else "HTTP")
+                    showWebAdminDialog = false
+                    Toast.makeText(context, "Menguji keterbukaan port $parsedPort...", Toast.LENGTH_SHORT).show()
+                }) {
+                    Text("Uji Auth Dahulu", color = BlynkBlueDark)
+                }
+            }
+        )
+    }
+
+    if (showCctvDialog) {
+        val finalPath = when (cctvChannelPreset) {
+            "Generic" -> "live/ch0"
+            "Hikvision" -> "Streaming/Channels/101"
+            "Dahua" -> "cam/realmonitor?channel=1&subtype=0"
+            else -> cctvCustomPath
+        }
+        val authPart = if (cctvUsername.isNotBlank()) {
+            if (cctvPassword.isNotBlank()) "${cctvUsername}:${cctvPassword}@" else "${cctvUsername}@"
+        } else ""
+        val previewRtsp = "rtsp://$authPart${host.ip}:554/$finalPath"
+
+        AlertDialog(
+            onDismissRequest = { showCctvDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(imageVector = Icons.Rounded.Videocam, contentDescription = null, tint = QualityAmber)
+                    Text(text = "Monitoring Feed CCTV (RTSP)", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "Kamera IP: ${host.ip} (${host.vendor})",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Text(text = "Pilih Preset Format Stream Kamera:", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf("Generic", "Hikvision", "Dahua", "Kustom").forEach { preset ->
+                            Surface(
+                                modifier = Modifier.clickable { cctvChannelPreset = preset },
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (cctvChannelPreset == preset) QualityAmber else MaterialTheme.colorScheme.surfaceVariant
+                            ) {
+                                Text(
+                                    text = preset,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = if (cctvChannelPreset == preset) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    if (cctvChannelPreset == "Kustom") {
+                        OutlinedTextField(
+                            value = cctvCustomPath,
+                            onValueChange = { cctvCustomPath = it },
+                            label = { Text("Path RTSP Stream (misal: h264/ch1/main)") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = cctvUsername,
+                            onValueChange = { cctvUsername = it },
+                            label = { Text("Username (opsional)") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
+                            value = cctvPassword,
+                            onValueChange = { cctvPassword = it },
+                            label = { Text("Password (opsional)") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = previewRtsp,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(8.dp)
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        try {
+                            val intent = Intent(Intent.ACTION_VIEW).apply {
+                                setDataAndType(Uri.parse(previewRtsp), "video/*")
+                            }
+                            context.startActivity(Intent.createChooser(intent, "Buka Feed Video Kamera"))
+                            showCctvDialog = false
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Tidak ada aplikasi pemutar RTSP (VLC/MX Player): ${e.message}", Toast.LENGTH_LONG).show()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = QualityAmber)
+                ) {
+                    Text("Luncurkan Stream", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCctvDialog = false }) {
+                    Text("Tutup", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        )
     }
 }
 

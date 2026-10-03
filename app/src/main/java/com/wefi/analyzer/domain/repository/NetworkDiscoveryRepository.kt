@@ -34,6 +34,8 @@ interface NetworkDiscoveryRepository {
 
     fun hasCleartextManagement(host: DiscoveredHost): Boolean
     
+    suspend fun testAuthPosture(hostIp: String, port: Int, protocolHint: String? = null): com.wefi.analyzer.domain.model.AuthPostureResult
+    
     fun generateReport(hosts: List<DiscoveredHost>, durationMs: Long, subnet: String): DiscoveryReport
     
     fun exportReportJson(report: DiscoveryReport): String
