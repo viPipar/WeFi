@@ -26,7 +26,62 @@ class NetworkDiscoveryViewModel(
     val uiState: StateFlow<NetworkDiscoveryUiState> = _uiState.asStateFlow()
 
     private var scanJob: Job? = null
-    private val commonPorts = listOf(22, 23, 53, 80, 443, 554, 8000, 8080, 8443, 3702, 37777, 5000, 8888)
+    private val commonPorts = listOf(21, 22, 23, 53, 80, 443, 445, 554, 1883, 3128, 5000, 8000, 8080, 8291, 8443, 8888, 3702, 37777)
+
+    private val _selectedHostForDetail = MutableStateFlow<DiscoveredHost?>(null)
+    val selectedHostForDetail: StateFlow<DiscoveredHost?> = _selectedHostForDetail.asStateFlow()
+
+    private val _isDeepScanningHost = MutableStateFlow(false)
+    val isDeepScanningHost: StateFlow<Boolean> = _isDeepScanningHost.asStateFlow()
+
+    fun selectHostForDetail(host: DiscoveredHost?) {
+        _selectedHostForDetail.value = host
+    }
+
+    fun scanHostDeep(host: DiscoveredHost) {
+        scanHostDeep(host.ip)
+    }
+
+    fun scanHostDeep(hostIp: String) {
+        if (_isDeepScanningHost.value) return
+        viewModelScope.launch {
+            _isDeepScanningHost.value = true
+            val deepPorts = listOf(
+                21, 22, 23, 25, 53, 80, 110, 139, 443, 445, 554, 1883, 3128,
+                3306, 3389, 3702, 5000, 8000, 8080, 8291, 8443, 8888, 9000, 37777
+            )
+            val openPorts = mutableListOf<PortResult>()
+            try {
+                repository.scanPorts(hostIp, deepPorts).collect { portResult ->
+                    if (portResult.status == PortStatus.OPEN) {
+                        openPorts.add(portResult)
+                    }
+                }
+            } catch (ignored: Exception) {}
+
+            _uiState.update { state ->
+                val updatedHosts = state.hosts.map { h ->
+                    if (h.ip == hostIp) {
+                        val mergedPorts = (h.openPorts + openPorts).distinctBy { it.port }
+                        val updated = h.copy(openPorts = mergedPorts)
+                        val risk = repository.evaluateHostRisk(updated)
+                        updated.copy(riskProfile = risk)
+                    } else h
+                }
+                state.copy(hosts = updatedHosts)
+            }
+
+            _selectedHostForDetail.update { current ->
+                if (current?.ip == hostIp) {
+                    val mergedPorts = (current.openPorts + openPorts).distinctBy { it.port }
+                    val updated = current.copy(openPorts = mergedPorts)
+                    val risk = repository.evaluateHostRisk(updated)
+                    updated.copy(riskProfile = risk)
+                } else current
+            }
+            _isDeepScanningHost.value = false
+        }
+    }
 
     fun startDiscovery() {
         if (_uiState.value.isScanning) return
@@ -230,10 +285,18 @@ class NetworkDiscoveryViewModel(
                 val firmwareToMatch = banner?.onvifFirmware ?: ""
                 val cveMatches = repository.matchCve(vendorToMatch, modelToMatch, firmwareToMatch)
 
+                val risk = repository.evaluateHostRisk(
+                    host.copy(
+                        openPorts = host.openPorts,
+                        cveMatches = cveMatches
+                    )
+                )
+
                 val auditedHost = host.copy(
                     banner = banner,
                     probableDeviceType = deviceType,
-                    cveMatches = cveMatches
+                    cveMatches = cveMatches,
+                    riskProfile = risk
                 )
                 fullyAuditedHosts.add(auditedHost)
                 _uiState.update { state ->

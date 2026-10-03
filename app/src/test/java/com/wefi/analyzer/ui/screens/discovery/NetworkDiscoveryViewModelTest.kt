@@ -184,6 +184,45 @@ class NetworkDiscoveryViewModelTest {
         val json = viewModel.getExportJson()
         assertTrue(json.contains("STUB_JSON_REPORT"))
     }
+
+    @Test
+    fun testSelectHostForDetail_updatesSelectedHostState() = runTest {
+        val host = DiscoveredHost(
+            ip = "192.168.1.10",
+            responseTimeMs = 15L
+        )
+
+        assertNull(viewModel.selectedHostForDetail.value)
+
+        viewModel.selectHostForDetail(host)
+        assertEquals("192.168.1.10", viewModel.selectedHostForDetail.value?.ip)
+
+        viewModel.selectHostForDetail(null)
+        assertNull(viewModel.selectedHostForDetail.value)
+    }
+
+    @Test
+    fun testScanHostDeep_enrichesHostPortsAndUpdatesState() = runTest {
+        val initialHost = DiscoveredHost(
+            ip = "192.168.1.20",
+            responseTimeMs = 20L
+        )
+        fakeRepo.stubPortResults["192.168.1.20"] = listOf(
+            PortResult(8291, PortStatus.OPEN, "MikroTik Winbox", 8L),
+            PortResult(80, PortStatus.OPEN, "HTTP Admin", 5L)
+        )
+
+        viewModel.selectHostForDetail(initialHost)
+        viewModel.scanHostDeep(initialHost)
+        advanceUntilIdle()
+
+        assertFalse(viewModel.isDeepScanningHost.value)
+        val updatedSelected = viewModel.selectedHostForDetail.value
+        assertNotNull(updatedSelected)
+        assertEquals("192.168.1.20", updatedSelected?.ip)
+        assertEquals(2, updatedSelected?.openPorts?.size)
+        assertTrue(updatedSelected?.openPorts?.any { it.port == 8291 } == true)
+    }
 }
 
 private class FakeNetworkDiscoveryRepository : NetworkDiscoveryRepository {
