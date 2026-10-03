@@ -286,30 +286,51 @@ fun SpeedTestScreen(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // Ping & Jitter Summary
-                Row(
+                // Balanced 2x2 Summary Metrics (Latensi, Jitter, Unduh, Unggah)
+                Column(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    BlynkMetricTile(
-                        label = "Latensi",
-                        value = "${metrics.pingMs}",
-                        unit = "ms",
-                        icon = Icons.Rounded.Timer,
-                        valueColor = if (metrics.pingMs in 0.1..40.0) QualityGreen else MaterialTheme.colorScheme.onSurface
-                    )
-                    BlynkMetricTile(
-                        label = "Jitter",
-                        value = "${metrics.jitterMs}",
-                        unit = "ms",
-                        icon = Icons.Rounded.GraphicEq
-                    )
-                    BlynkMetricTile(
-                        label = "Upload Riil",
-                        value = "${metrics.uploadMbps}",
-                        unit = "Mbps",
-                        icon = Icons.Rounded.CloudUpload
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        BlynkMetricTile(
+                            label = "Latensi",
+                            value = "${metrics.pingMs}",
+                            unit = "ms",
+                            icon = Icons.Rounded.Timer,
+                            valueColor = if (metrics.pingMs in 0.1..40.0) QualityGreen else MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f)
+                        )
+                        BlynkMetricTile(
+                            label = "Jitter",
+                            value = "${metrics.jitterMs}",
+                            unit = "ms",
+                            icon = Icons.Rounded.GraphicEq,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        BlynkMetricTile(
+                            label = "Unduh Riil",
+                            value = "${metrics.downloadMbps}",
+                            unit = "Mbps",
+                            icon = Icons.Rounded.Download,
+                            valueColor = BlynkBlue,
+                            modifier = Modifier.weight(1f)
+                        )
+                        BlynkMetricTile(
+                            label = "Unggah Riil",
+                            value = "${metrics.uploadMbps}",
+                            unit = "Mbps",
+                            icon = Icons.Rounded.CloudUpload,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                 }
             }
         }
