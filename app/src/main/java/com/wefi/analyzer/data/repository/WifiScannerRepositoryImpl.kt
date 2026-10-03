@@ -243,6 +243,7 @@ class WifiScannerRepositoryImpl(
             distanceMeters = distance,
             maxPhyRateMbps = phyRate,
             security = security,
+            capabilities = capabilities,
             qualityScore = score
         )
     }
