@@ -13,6 +13,7 @@ data class WifiAccessPoint(
     val distanceMeters: Double = 0.0,
     val maxPhyRateMbps: Int = 144,
     val security: String = "WPA2",
+    val capabilities: String = "",
     val qualityScore: Int = 50,
     val isConnected: Boolean = false,
     val timestamp: Long = System.currentTimeMillis()
