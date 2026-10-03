@@ -98,6 +98,7 @@ class WifiConnectorImpl(
     override fun isCurrentlyConnectedTo(ssid: String, bssid: String): Boolean {
         return try {
             val info = wifiManager?.connectionInfo ?: return false
+            if (info.networkId == -1) return false
             val currentSsid = info.ssid?.replace("\"", "") ?: ""
             val currentBssid = info.bssid ?: ""
             if (bssid.isNotBlank() && currentBssid.isNotBlank()) {
