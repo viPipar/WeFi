@@ -39,7 +39,7 @@ fun BottomNavBar(
             containerColor = Color.Transparent,
             tonalElevation = 0.dp
         ) {
-            Screen.items.filterNotNull().forEach { screen ->
+            Screen.items.forEach { screen ->
                 val selected = currentRoute != null && currentRoute == screen.route
                 NavigationBarItem(
                     selected = selected,

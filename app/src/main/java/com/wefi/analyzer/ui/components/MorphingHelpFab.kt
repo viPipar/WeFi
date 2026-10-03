@@ -71,7 +71,7 @@ fun MorphingHelpFab(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .padding(end = 16.dp, bottom = 86.dp),
+            .padding(end = 16.dp, bottom = 16.dp),
         contentAlignment = Alignment.BottomEnd
     ) {
         Surface(
