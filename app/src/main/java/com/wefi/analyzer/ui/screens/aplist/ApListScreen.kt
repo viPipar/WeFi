@@ -371,31 +371,45 @@ private fun ApItemCard(ap: WifiAccessPoint) {
 
         Spacer(modifier = Modifier.height(14.dp))
 
-        // Metrics Grid (RSSI, Jarak, Kanal, PHY Rate)
-        Row(
+        // Metrics Grid 2x2 (RSSI, Jarak, Kanal, PHY Rate)
+        Column(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            BlynkMetricTile(
-                label = "Kekuatan Sinyal",
-                value = "${ap.rssi}",
-                unit = "dBm"
-            )
-            BlynkMetricTile(
-                label = "Estimasi Jarak",
-                value = ap.formattedDistance,
-                valueColor = BlynkBlue
-            )
-            BlynkMetricTile(
-                label = "Kanal & Band",
-                value = "Ch ${ap.channel}",
-                unit = if (ap.is24GHz) "2.4G" else if (ap.is5GHz) "5G" else "6G"
-            )
-            BlynkMetricTile(
-                label = "Max PHY Rate",
-                value = "${ap.maxPhyRateMbps}",
-                unit = "Mbps"
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                BlynkMetricTile(
+                    label = "Kekuatan Sinyal",
+                    value = "${ap.rssi}",
+                    unit = "dBm",
+                    modifier = Modifier.weight(1f)
+                )
+                BlynkMetricTile(
+                    label = "Estimasi Jarak",
+                    value = ap.formattedDistance,
+                    valueColor = BlynkBlue,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                BlynkMetricTile(
+                    label = "Kanal & Band",
+                    value = "Ch ${ap.channel}",
+                    unit = if (ap.is24GHz) "2.4G" else if (ap.is5GHz) "5G" else "6G",
+                    modifier = Modifier.weight(1f)
+                )
+                BlynkMetricTile(
+                    label = "Max PHY Rate",
+                    value = "${ap.maxPhyRateMbps}",
+                    unit = "Mbps",
+                    modifier = Modifier.weight(1f)
+                )
+            }
         }
     }
 }
