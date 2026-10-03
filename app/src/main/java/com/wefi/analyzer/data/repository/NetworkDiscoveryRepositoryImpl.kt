@@ -7,6 +7,7 @@ import android.net.wifi.WifiManager
 import android.os.Build
 import android.util.Log
 import com.wefi.analyzer.data.util.NetworkSafetyThrottler
+import com.wefi.analyzer.domain.model.AssetCategory
 import com.wefi.analyzer.domain.model.BannerInfo
 import com.wefi.analyzer.domain.model.CveMatch
 import com.wefi.analyzer.domain.model.DiscoveredHost
@@ -51,13 +52,13 @@ import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 
 class NetworkDiscoveryRepositoryImpl(
-    private val context: Context,
+    private val context: Context? = null,
     private val throttler: NetworkSafetyThrottler = NetworkSafetyThrottler()
 ) : NetworkDiscoveryRepository {
 
     private val tag = "NetworkDiscoveryRepo"
-    private val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
-    private val nsdManager = context.applicationContext.getSystemService(Context.NSD_SERVICE) as? NsdManager
+    private val wifiManager = context?.applicationContext?.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+    private val nsdManager = context?.applicationContext?.getSystemService(Context.NSD_SERVICE) as? NsdManager
 
     private var multicastLock: WifiManager.MulticastLock? = null
 
@@ -82,7 +83,8 @@ class NetworkDiscoveryRepositoryImpl(
 
     private fun loadOuiDatabase() {
         try {
-            context.assets.open("oui_database.csv").bufferedReader().useLines { lines ->
+            val ctx = context ?: return
+            ctx.assets.open("oui_database.csv").bufferedReader().useLines { lines ->
                 lines.forEach { line ->
                     val trimmed = line.trim()
                     if (trimmed.isNotEmpty() && !trimmed.startsWith("#")) {
@@ -103,7 +105,8 @@ class NetworkDiscoveryRepositoryImpl(
 
     private fun loadCveCatalog() {
         try {
-            val jsonString = context.assets.open("cve_catalog.json").bufferedReader().use { it.readText() }
+            val ctx = context ?: return
+            val jsonString = ctx.assets.open("cve_catalog.json").bufferedReader().use { it.readText() }
             val jsonArray = JSONArray(jsonString)
             for (i in 0 until jsonArray.length()) {
                 val obj = jsonArray.getJSONObject(i)
@@ -866,6 +869,32 @@ class NetworkDiscoveryRepositoryImpl(
                 "Perangkat Jaringan"
             }
         }
+    }
+
+    override fun classifyAssetCategory(host: DiscoveredHost): AssetCategory {
+        val portSet = host.openPorts.map { it.port }.toSet()
+        val allText = buildString {
+            append(host.banner?.rawBanner ?: "").append(" ")
+            append(host.banner?.server ?: "").append(" ")
+            append(host.banner?.rtspServer ?: "").append(" ")
+            append(host.banner?.onvifManufacturer ?: "").append(" ")
+            append(host.banner?.onvifModel ?: "").append(" ")
+            host.services.forEach { append(it.serviceName).append(" ").append(it.serviceType).append(" ") }
+        }.lowercase()
+
+        return when {
+            host.isGateway || portSet.contains(53) || portSet.contains(8291) || allText.contains("router") || allText.contains("gateway") -> AssetCategory.GATEWAY_ROUTER
+            portSet.contains(554) || portSet.contains(3702) || portSet.contains(37777) || allText.contains("camera") || allText.contains("cctv") -> AssetCategory.SURVEILLANCE_CCTV
+            portSet.contains(445) || portSet.contains(139) || allText.contains("synology") || allText.contains("qnap") -> AssetCategory.STORAGE_NAS
+            portSet.contains(1883) || portSet.contains(8883) || allText.contains("mqtt") -> AssetCategory.IOT_BROKER
+            portSet.isNotEmpty() -> AssetCategory.WORKSTATION
+            else -> AssetCategory.UNKNOWN
+        }
+    }
+
+    override fun hasCleartextManagement(host: DiscoveredHost): Boolean {
+        val cleartextPorts = setOf(21, 23, 80)
+        return host.openPorts.any { it.port in cleartextPorts }
     }
 
     /**

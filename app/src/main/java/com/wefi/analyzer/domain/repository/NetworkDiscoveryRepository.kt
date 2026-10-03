@@ -30,6 +30,10 @@ interface NetworkDiscoveryRepository {
     
     fun evaluateHostRisk(host: DiscoveredHost): com.wefi.analyzer.domain.model.HostRiskProfile
     
+    fun classifyAssetCategory(host: DiscoveredHost): com.wefi.analyzer.domain.model.AssetCategory
+
+    fun hasCleartextManagement(host: DiscoveredHost): Boolean
+    
     fun generateReport(hosts: List<DiscoveredHost>, durationMs: Long, subnet: String): DiscoveryReport
     
     fun exportReportJson(report: DiscoveryReport): String

@@ -57,6 +57,15 @@ data class HostRiskProfile(
     val recommendations: List<String> = emptyList()
 )
 
+enum class AssetCategory(val label: String) {
+    GATEWAY_ROUTER("Router / Gateway"),
+    SURVEILLANCE_CCTV("Kamera CCTV / NVR"),
+    STORAGE_NAS("NAS / File Server"),
+    IOT_BROKER("IoT Broker / Bridge"),
+    WORKSTATION("Host / Komputer"),
+    UNKNOWN("Perangkat Lain")
+}
+
 data class DiscoveredHost(
     val ip: String,
     val macAddress: String? = null,
@@ -68,7 +77,9 @@ data class DiscoveredHost(
     val probableDeviceType: String = "Perangkat Jaringan",
     val cveMatches: List<CveMatch> = emptyList(),
     val isGateway: Boolean = false,
-    val riskProfile: HostRiskProfile = HostRiskProfile()
+    val riskProfile: HostRiskProfile = HostRiskProfile(),
+    val assetCategory: AssetCategory = AssetCategory.UNKNOWN,
+    val hasCleartextManagement: Boolean = false
 )
 
 data class SubnetInfo(

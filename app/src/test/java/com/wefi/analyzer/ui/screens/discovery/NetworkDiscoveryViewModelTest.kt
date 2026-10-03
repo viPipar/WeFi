@@ -273,6 +273,14 @@ private class FakeNetworkDiscoveryRepository : NetworkDiscoveryRepository {
         )
     }
 
+    override fun classifyAssetCategory(host: DiscoveredHost): com.wefi.analyzer.domain.model.AssetCategory {
+        return if (host.isGateway) com.wefi.analyzer.domain.model.AssetCategory.GATEWAY_ROUTER else com.wefi.analyzer.domain.model.AssetCategory.WORKSTATION
+    }
+
+    override fun hasCleartextManagement(host: DiscoveredHost): Boolean {
+        return host.openPorts.any { it.port in listOf(21, 23, 80) }
+    }
+
     override fun generateReport(hosts: List<DiscoveredHost>, durationMs: Long, subnet: String): DiscoveryReport {
         return DiscoveryReport(
             timestamp = 1000L,

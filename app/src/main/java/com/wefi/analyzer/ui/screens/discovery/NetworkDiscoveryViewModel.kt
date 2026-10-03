@@ -65,7 +65,9 @@ class NetworkDiscoveryViewModel(
                         val mergedPorts = (h.openPorts + openPorts).distinctBy { it.port }
                         val updated = h.copy(openPorts = mergedPorts)
                         val risk = repository.evaluateHostRisk(updated)
-                        updated.copy(riskProfile = risk)
+                        val category = repository.classifyAssetCategory(updated)
+                        val cleartext = repository.hasCleartextManagement(updated)
+                        updated.copy(riskProfile = risk, assetCategory = category, hasCleartextManagement = cleartext)
                     } else h
                 }
                 state.copy(hosts = updatedHosts)
@@ -76,7 +78,9 @@ class NetworkDiscoveryViewModel(
                     val mergedPorts = (current.openPorts + openPorts).distinctBy { it.port }
                     val updated = current.copy(openPorts = mergedPorts)
                     val risk = repository.evaluateHostRisk(updated)
-                    updated.copy(riskProfile = risk)
+                    val category = repository.classifyAssetCategory(updated)
+                    val cleartext = repository.hasCleartextManagement(updated)
+                    updated.copy(riskProfile = risk, assetCategory = category, hasCleartextManagement = cleartext)
                 } else current
             }
             _isDeepScanningHost.value = false
@@ -292,11 +296,16 @@ class NetworkDiscoveryViewModel(
                     )
                 )
 
+                val category = repository.classifyAssetCategory(host.copy(banner = banner, services = host.services))
+                val cleartext = repository.hasCleartextManagement(host)
+
                 val auditedHost = host.copy(
                     banner = banner,
                     probableDeviceType = deviceType,
                     cveMatches = cveMatches,
-                    riskProfile = risk
+                    riskProfile = risk,
+                    assetCategory = category,
+                    hasCleartextManagement = cleartext
                 )
                 fullyAuditedHosts.add(auditedHost)
                 _uiState.update { state ->
