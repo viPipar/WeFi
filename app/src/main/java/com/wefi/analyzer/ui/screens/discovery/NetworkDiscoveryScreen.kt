@@ -75,11 +75,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.wefi.analyzer.domain.model.AssetCategory
 import com.wefi.analyzer.domain.model.DiscoveredHost
 import com.wefi.analyzer.domain.model.HostRiskLevel
+import com.wefi.analyzer.domain.model.PmfMode
 import com.wefi.analyzer.domain.model.PortResult
+import com.wefi.analyzer.domain.model.WirelessSecurityAuditItem
 import com.wefi.analyzer.ui.theme.BlynkBlue
 import com.wefi.analyzer.ui.theme.BlynkBlueDark
 import com.wefi.analyzer.ui.theme.BlynkBlueTint
@@ -126,76 +130,142 @@ fun NetworkDiscoveryScreen(
             )
         }
 
-        // Circuit breaker / Client isolation warning
-        if (uiState.isClientIsolationSuspected) {
-            item {
-                ClientIsolationNoticeCard()
-            }
+        item {
+            ExecutiveReconStatBar(summary = uiState.reconStatSummary)
         }
 
-        // Expandable Android Limitation Info
         item {
-            AndroidLimitationsAccordion(
-                isExpanded = isLimitationsExpanded,
-                onToggle = { isLimitationsExpanded = !isLimitationsExpanded }
+            ReconTabSwitcher(
+                selectedTab = uiState.selectedTab,
+                hostCount = uiState.hosts.size,
+                wirelessCount = uiState.wirelessAuditItems.size,
+                onTabSelected = { viewModel.setReconTab(it) }
             )
         }
 
-        // Discovered Hosts Summary Header
-        item {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Daftar Perangkat Terdeteksi (${uiState.hosts.size})",
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+        if (uiState.selectedTab == SecurityReconTab.LAN_SURFACE) {
+            // Circuit breaker / Client isolation warning
+            if (uiState.isClientIsolationSuspected) {
+                item {
+                    ClientIsolationNoticeCard()
+                }
+            }
+
+            // Expandable Android Limitation Info
+            item {
+                AndroidLimitationsAccordion(
+                    isExpanded = isLimitationsExpanded,
+                    onToggle = { isLimitationsExpanded = !isLimitationsExpanded }
                 )
-                if (uiState.report != null) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        ExportButtons(
-                            onCopyReport = {
-                                viewModel.prepareExport()
-                                val text = viewModel.uiState.value.exportedReportText ?: ""
-                                if (text.isNotEmpty()) {
-                                    clipboardManager.setText(AnnotatedString(text))
-                                    Toast.makeText(context, "Laporan disalin ke clipboard", Toast.LENGTH_SHORT).show()
-                                }
-                            },
-                            onShareReport = {
-                                viewModel.prepareExport()
-                                val text = viewModel.uiState.value.exportedReportText ?: ""
-                                if (text.isNotEmpty()) {
-                                    val sendIntent = Intent().apply {
-                                        action = Intent.ACTION_SEND
-                                        putExtra(Intent.EXTRA_TEXT, text)
-                                        type = "text/plain"
+            }
+
+            // Discovered Hosts Summary Header
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Daftar Perangkat Terdeteksi (${uiState.hosts.size})",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    if (uiState.report != null) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            ExportButtons(
+                                onCopyReport = {
+                                    viewModel.prepareExport()
+                                    val text = viewModel.uiState.value.exportedReportText ?: ""
+                                    if (text.isNotEmpty()) {
+                                        clipboardManager.setText(AnnotatedString(text))
+                                        Toast.makeText(context, "Laporan disalin ke clipboard", Toast.LENGTH_SHORT).show()
                                     }
-                                    context.startActivity(Intent.createChooser(sendIntent, "Bagikan Laporan Audit"))
+                                },
+                                onShareReport = {
+                                    viewModel.prepareExport()
+                                    val text = viewModel.uiState.value.exportedReportText ?: ""
+                                    if (text.isNotEmpty()) {
+                                        val sendIntent = Intent().apply {
+                                            action = Intent.ACTION_SEND
+                                            putExtra(Intent.EXTRA_TEXT, text)
+                                            type = "text/plain"
+                                        }
+                                        context.startActivity(Intent.createChooser(sendIntent, "Bagikan Laporan Audit"))
+                                    }
                                 }
-                            }
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Discovered Host Items
+            if (uiState.hosts.isEmpty()) {
+                item {
+                    EmptyStateCard(isScanning = uiState.isScanning)
+                }
+            } else {
+                items(uiState.hosts, key = { it.ip }) { host ->
+                    DiscoveredHostCard(
+                        host = host,
+                        onOpenDetail = { viewModel.selectHostForDetail(host) }
+                    )
+                }
+            }
+        } else {
+            // Wireless Recon Matrix Tab
+            item {
+                val vulnerableCount = uiState.wirelessAuditItems.count { it.riskLevel != HostRiskLevel.SAFE }
+                val displayCount = if (uiState.wirelessFilterOnlyVulnerable) vulnerableCount else uiState.wirelessAuditItems.size
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Wireless Recon Matrix ($displayCount)",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Surface(
+                        modifier = Modifier.clickable {
+                            viewModel.setWirelessFilterOnlyVulnerable(!uiState.wirelessFilterOnlyVulnerable)
+                        },
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (uiState.wirelessFilterOnlyVulnerable) QualityAmber.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant
+                    ) {
+                        Text(
+                            text = if (uiState.wirelessFilterOnlyVulnerable) "Hanya AP Rentan ✓" else "Filter Rentan",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (uiState.wirelessFilterOnlyVulnerable) QualityAmber else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                         )
                     }
                 }
             }
-        }
 
-        // Discovered Host Items
-        if (uiState.hosts.isEmpty()) {
-            item {
-                EmptyStateCard(isScanning = uiState.isScanning)
+            val filteredItems = if (uiState.wirelessFilterOnlyVulnerable) {
+                uiState.wirelessAuditItems.filter { it.riskLevel != HostRiskLevel.SAFE }
+            } else {
+                uiState.wirelessAuditItems
             }
-        } else {
-            items(uiState.hosts, key = { it.ip }) { host ->
-                DiscoveredHostCard(
-                    host = host,
-                    onOpenDetail = { viewModel.selectHostForDetail(host) }
-                )
+
+            if (filteredItems.isEmpty()) {
+                item {
+                    WirelessEmptyCard(isFiltered = uiState.wirelessFilterOnlyVulnerable)
+                }
+            } else {
+                items(filteredItems, key = { it.bssid }) { auditItem ->
+                    WirelessReconCard(auditItem = auditItem)
+                }
             }
         }
 
@@ -583,6 +653,34 @@ private fun DiscoveredHostCard(
                                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
                                 )
                             }
+                            if (host.assetCategory != AssetCategory.UNKNOWN) {
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = BlynkBlueTint
+                                ) {
+                                    Text(
+                                        text = host.assetCategory.label,
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = BlynkBlueDark,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                            if (host.hasCleartextManagement) {
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = QualityAmber.copy(alpha = 0.15f)
+                                ) {
+                                    Text(
+                                        text = "CLEARTEXT",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = QualityAmber,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
                         }
                         Text(
                             text = "${host.probableDeviceType} • ${host.vendor}",
@@ -855,6 +953,28 @@ private fun HostDetailBottomSheet(
                                         fontSize = 9.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = BlynkBlueDark,
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                            if (host.assetCategory != AssetCategory.UNKNOWN) {
+                                Surface(shape = RoundedCornerShape(4.dp), color = BlynkBlueTint) {
+                                    Text(
+                                        text = host.assetCategory.label,
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = BlynkBlueDark,
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                            if (host.hasCleartextManagement) {
+                                Surface(shape = RoundedCornerShape(4.dp), color = QualityAmber.copy(alpha = 0.15f)) {
+                                    Text(
+                                        text = "CLEARTEXT",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = QualityAmber,
                                         modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                                     )
                                 }
@@ -1343,6 +1463,375 @@ private fun EmptyStateCard(isScanning: Boolean) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun ExecutiveReconStatBar(
+    summary: ReconStatSummary
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        ReconStatPill(
+            label = "Host Kritis",
+            count = summary.criticalHosts,
+            alertColor = QualityRed,
+            modifier = Modifier.weight(1f)
+        )
+        ReconStatPill(
+            label = "Cleartext",
+            count = summary.cleartextPortsCount,
+            alertColor = QualityAmber,
+            modifier = Modifier.weight(1f)
+        )
+        ReconStatPill(
+            label = "WPS Aktif",
+            count = summary.wpsEnabledApsCount,
+            alertColor = QualityAmber,
+            modifier = Modifier.weight(1f)
+        )
+        ReconStatPill(
+            label = "Tanpa PMF",
+            count = summary.noPmfApsCount,
+            alertColor = QualityAmber,
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+@Composable
+private fun ReconStatPill(
+    label: String,
+    count: Int,
+    alertColor: Color,
+    modifier: Modifier = Modifier
+) {
+    val isAlert = count > 0
+    val bgColor = if (isAlert) alertColor.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+    val textColor = if (isAlert) alertColor else MaterialTheme.colorScheme.onSurfaceVariant
+
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(10.dp),
+        color = bgColor
+    ) {
+        Column(
+            modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = count.toString(),
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+                color = textColor
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = label,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Medium,
+                color = textColor,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReconTabSwitcher(
+    selectedTab: SecurityReconTab,
+    hostCount: Int,
+    wirelessCount: Int,
+    onTabSelected: (SecurityReconTab) -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+    ) {
+        Row(
+            modifier = Modifier.padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            val isLan = selectedTab == SecurityReconTab.LAN_SURFACE
+            Surface(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable { onTabSelected(SecurityReconTab.LAN_SURFACE) },
+                shape = RoundedCornerShape(9.dp),
+                color = if (isLan) BlynkBlue else Color.Transparent
+            ) {
+                Row(
+                    modifier = Modifier.padding(vertical = 9.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "LAN Surface ($hostCount)",
+                        fontSize = 12.sp,
+                        fontWeight = if (isLan) FontWeight.Bold else FontWeight.Medium,
+                        color = if (isLan) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            val isWireless = selectedTab == SecurityReconTab.WIRELESS_RECON
+            Surface(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable { onTabSelected(SecurityReconTab.WIRELESS_RECON) },
+                shape = RoundedCornerShape(9.dp),
+                color = if (isWireless) BlynkBlue else Color.Transparent
+            ) {
+                Row(
+                    modifier = Modifier.padding(vertical = 9.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Wireless Recon ($wirelessCount)",
+                        fontSize = 12.sp,
+                        fontWeight = if (isWireless) FontWeight.Bold else FontWeight.Medium,
+                        color = if (isWireless) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WirelessReconCard(
+    auditItem: WirelessSecurityAuditItem
+) {
+    var isExpanded by remember { mutableStateOf(false) }
+
+    val riskColor = when (auditItem.riskLevel) {
+        HostRiskLevel.CRITICAL -> QualityRed
+        HostRiskLevel.HIGH -> QualityRed
+        HostRiskLevel.MEDIUM -> QualityAmber
+        HostRiskLevel.LOW -> BlynkBlue
+        HostRiskLevel.SAFE -> QualityGreen
+    }
+
+    val riskLabel = when (auditItem.riskLevel) {
+        HostRiskLevel.CRITICAL -> "KRITIS"
+        HostRiskLevel.HIGH -> "TINGGI"
+        HostRiskLevel.MEDIUM -> "SEDANG"
+        HostRiskLevel.LOW -> "RENDAH"
+        HostRiskLevel.SAFE -> "AMAN"
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .animateContentSize(),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(
+            1.dp,
+            if (auditItem.isRogueTwinCandidate) QualityRed.copy(alpha = 0.5f) else MaterialTheme.colorScheme.outline
+        )
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            // Header: SSID, BSSID, Signal & Risk
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { isExpanded = !isExpanded },
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = riskColor.copy(alpha = 0.12f),
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = if (auditItem.riskLevel == HostRiskLevel.CRITICAL || auditItem.riskLevel == HostRiskLevel.HIGH) Icons.Rounded.Warning else Icons.Rounded.Security,
+                                contentDescription = null,
+                                tint = riskColor,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                    Column {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                text = if (auditItem.ssid.isBlank()) "(SSID Tersembunyi)" else auditItem.ssid,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1
+                            )
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = riskColor.copy(alpha = 0.12f)
+                            ) {
+                                Text(
+                                    text = riskLabel,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = riskColor,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                        Text(
+                            text = "${auditItem.bssid} • Ch ${auditItem.channel} • ${auditItem.security}",
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = "${auditItem.rssi} dBm",
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = if (auditItem.rssi > -65) QualityGreen else QualityAmber
+                    )
+                    Icon(
+                        imageVector = if (isExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+
+            // Security posture badges row
+            Spacer(modifier = Modifier.height(10.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                if (auditItem.hasWps) {
+                    PostureBadge(label = "WPS AKTIF", color = QualityAmber)
+                }
+                when (auditItem.pmfMode) {
+                    PmfMode.REQUIRED -> PostureBadge(label = "PMF WAJIB", color = QualityGreen)
+                    PmfMode.CAPABLE -> PostureBadge(label = "PMF OPSIONAL", color = BlynkBlue)
+                    PmfMode.NONE -> PostureBadge(label = "TANPA PMF", color = QualityAmber)
+                }
+                if (auditItem.hasInsecureCipher) {
+                    PostureBadge(label = "CIPHER USANG", color = QualityRed)
+                }
+                if (auditItem.isRogueTwinCandidate) {
+                    PostureBadge(label = "ROGUE/KEMBAR", color = QualityRed)
+                }
+            }
+
+            // Highlights
+            if (auditItem.riskHighlights.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    auditItem.riskHighlights.forEach { highlight ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(4.dp)
+                                    .background(riskColor, CircleShape)
+                            )
+                            Text(
+                                text = highlight,
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Expandable capabilities details
+            AnimatedVisibility(visible = isExpanded) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = "Beacon Capabilities: ${auditItem.capabilities}",
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PostureBadge(
+    label: String,
+    color: Color
+) {
+    Surface(
+        shape = RoundedCornerShape(4.dp),
+        color = color.copy(alpha = 0.12f)
+    ) {
+        Text(
+            text = label,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Bold,
+            color = color,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+        )
+    }
+}
+
+@Composable
+private fun WirelessEmptyCard(isFiltered: Boolean) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Security,
+                contentDescription = null,
+                tint = BlynkBlue,
+                modifier = Modifier.size(36.dp)
+            )
+            Text(
+                text = if (isFiltered) "Tidak Ada AP Rentan Ditemukan" else "Belum Ada Data Pemindaian Wi-Fi",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = if (isFiltered) "Semua Access Point di sekitar memiliki konfigurasi aman (WPS nonaktif & PMF aktif)." else "Nyalakan Wi-Fi dan lakukan pemindaian di menu Radar AP untuk menganalisis keamanan nirkabel.",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
         }
     }
 }
