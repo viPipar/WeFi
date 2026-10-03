@@ -1,6 +1,6 @@
 # Implementation Plan: Device Authentication Posture Assessment & Authorized CCTV Lab Monitoring
 
-**Tujuan:** Memperbaiki bug tombol Web Admin, meningkatkan ketahanan port scanning dan ping probe, serta menambahkan kapabilitas evaluasi keterbukaan autentikasi (*unauthenticated exposure*) dan monitoring CCTV lab terisolasi.
+**Tujuan:** Memperbaiki bug tombol Web Admin, meningkatkan ketahanan port scanning dan ping probe, menambahkan evaluasi keterbukaan autentikasi (*unauthenticated exposure*), serta mengintegrasikan pemutar video CCTV RTSP langsung di dalam aplikasi (*In-App Embedded Live Player*) berbasis AndroidX Media3.
 
 ---
 
@@ -40,7 +40,29 @@
   - File: `app/src/test/java/com/wefi/analyzer/ui/screens/discovery/NetworkDiscoveryViewModelTest.kt`
   - Buat pengujian untuk `AuthStatus`, pemetaan respon HTTP/RTSP, dan fungsi ViewModel.
 
-- [x] **Task 6: Verifikasi Build & Kompilasi**
+- [x] **Task 6: Verifikasi Build & Kompilasi Fase 1**
   - Jalankan `.\gradlew.bat testDebugUnitTest --no-daemon` (LULUS 100%)
   - Jalankan `.\gradlew.bat assembleDebug --no-daemon` (LULUS 100%)
-  - Pastikan seluruh pengujian lulus 100% dan APK debug terkompilasi tanpa error.
+
+- [x] **Task 7: Dependensi AndroidX Media3 ExoPlayer RTSP**
+  - File: `app/build.gradle.kts`
+  - Tambahkan pustaka resmi:
+    - `androidx.media3:media3-exoplayer:1.3.1`
+    - `androidx.media3:media3-exoplayer-rtsp:1.3.1`
+    - `androidx.media3:media3-ui:1.3.1`
+
+- [x] **Task 8: Komponen Jetpack Compose CctvLivePlayer**
+  - File: `app/src/main/java/com/wefi/analyzer/ui/components/CctvLivePlayer.kt`
+  - Bangun komponen `CctvLivePlayer` berbasis `AndroidView` membungkus `PlayerView`.
+  - Pasang `RtspMediaSource.Factory().setForceUseRtpTcp(true)` untuk keandalan streaming Wi-Fi.
+  - Implementasikan penanganan siklus hidup yang aman (`onDispose { player.release() }`).
+
+- [x] **Task 9: Integrasi In-App Live Player ke NetworkDiscoveryScreen**
+  - File: `app/src/main/java/com/wefi/analyzer/ui/screens/discovery/NetworkDiscoveryScreen.kt`
+  - Tambahkan dialog pemutar video langsung di dalam aplikasi saat pengguna memilih "Tonton di Aplikasi".
+  - Berikan opsi tombol cadangan "Buka di Pemutar Eksternal (VLC)".
+
+- [x] **Task 10: Pengujian Unit & Verifikasi Build Fase 2**
+  - Jalankan `.\gradlew.bat testDebugUnitTest --no-daemon` (LULUS 100%)
+  - Jalankan `.\gradlew.bat assembleDebug --no-daemon` (LULUS 100%)
+  - Pastikan seluruh pengujian lulus 100% dan APK debug terkompilasi sempurna.

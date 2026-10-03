@@ -68,6 +68,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import com.wefi.analyzer.domain.model.AuthPostureResult
 import com.wefi.analyzer.domain.model.AuthStatus
+import com.wefi.analyzer.ui.components.CctvLivePlayerDialog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -912,6 +913,8 @@ private fun HostDetailBottomSheet(
     val webPort = host.openPorts.firstOrNull { it.port in listOf(80, 443, 8080, 8443, 8000) }?.port
     var showWebAdminDialog by remember { mutableStateOf(false) }
     var showCctvDialog by remember { mutableStateOf(false) }
+    var showInAppPlayer by remember { mutableStateOf(false) }
+    var activeInAppStreamUrl by remember { mutableStateOf<String?>(null) }
     var selectedAuthPort by remember { mutableStateOf(webPort ?: if (host.openPorts.any { it.port == 554 }) 554 else 80) }
     var customWebPortInput by remember { mutableStateOf(webPort?.toString() ?: "80") }
     var customScheme by remember { mutableStateOf(if (webPort == 443 || webPort == 8443) "https" else "http") }
@@ -1802,27 +1805,57 @@ private fun HostDetailBottomSheet(
                 }
             },
             confirmButton = {
-                Button(
-                    onClick = {
-                        try {
-                            val intent = Intent(Intent.ACTION_VIEW).apply {
-                                setDataAndType(Uri.parse(previewRtsp), "video/*")
-                            }
-                            context.startActivity(Intent.createChooser(intent, "Buka Feed Video Kamera"))
-                            showCctvDialog = false
-                        } catch (e: Exception) {
-                            Toast.makeText(context, "Tidak ada aplikasi pemutar RTSP (VLC/MX Player): ${e.message}", Toast.LENGTH_LONG).show()
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = QualityAmber)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Luncurkan Stream", color = Color.White)
+                    OutlinedButton(
+                        onClick = {
+                            try {
+                                val intent = Intent(Intent.ACTION_VIEW).apply {
+                                    setDataAndType(Uri.parse(previewRtsp), "video/*")
+                                }
+                                context.startActivity(Intent.createChooser(intent, "Buka Feed Video Kamera"))
+                                showCctvDialog = false
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Tidak ada aplikasi pemutar RTSP eksternal: ${e.message}", Toast.LENGTH_LONG).show()
+                            }
+                        },
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text("VLC / Eksternal", fontSize = 12.sp)
+                    }
+
+                    Button(
+                        onClick = {
+                            activeInAppStreamUrl = previewRtsp
+                            showInAppPlayer = true
+                            showCctvDialog = false
+                        },
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = QualityAmber)
+                    ) {
+                        Icon(imageVector = Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.White)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Tonton di Aplikasi", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showCctvDialog = false }) {
                     Text("Tutup", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+            }
+        )
+    }
+
+    if (showInAppPlayer && activeInAppStreamUrl != null) {
+        CctvLivePlayerDialog(
+            rtspUrl = activeInAppStreamUrl!!,
+            cameraTitle = "${host.vendor ?: "Kamera"} (${host.ip})",
+            onDismiss = {
+                showInAppPlayer = false
+                activeInAppStreamUrl = null
             }
         )
     }

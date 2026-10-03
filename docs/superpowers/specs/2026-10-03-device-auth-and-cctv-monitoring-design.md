@@ -38,7 +38,7 @@
 ### Bug 5: Ketiadaan Fitur Uji Keterbukaan Autentikasi & Monitoring CCTV
 - **Kebutuhan:**
   Pengguna memerlukan verifikasi apakah perangkat lab (seperti Router dan CCTV) memiliki celah *unauthenticated exposure* (bisa diakses langsung tanpa kredensial) atau terlindungi oleh mekanisme autentikasi resmi (Basic/Digest/Form).
-  Pengguna juga membutuhkan launcher live stream CCTV (RTSP) dan web console langsung dari aplikasi.
+  Pengguna juga membutuhkan pemutar video tersemat langsung di aplikasi (*In-App Embedded Live Player*) serta opsi peluncur RTSP eksternal.
 
 ---
 
@@ -99,7 +99,7 @@ suspend fun testAuthPosture(hostIp: String, port: Int, protocolHint: String? = n
 
 ---
 
-## 3. Desain Antarmuka Pengguna (`NetworkDiscoveryScreen.kt`)
+## 3. Desain Antarmuka Pengguna & In-App Player (`NetworkDiscoveryScreen.kt` & `CctvLivePlayer.kt`)
 
 Sesuai dengan pedoman **clean-ui-procedural**:
 1. **Tombol Web Admin Permanen & Port Selector Dialog:**
@@ -119,17 +119,22 @@ Sesuai dengan pedoman **clean-ui-procedural**:
    - Jika `probableDeviceType == "Kamera CCTV / NVR"` atau `openPorts` memuat port 554/3702/37777:
      - Tampilkan kartu beraksen rapi "Akses & Monitoring CCTV Lab".
      - **Tombol Uji Stream RTSP:** Mengetes unauthenticated exposure stream port 554.
-     - **Tombol Buka Live Stream (RTSP):** 
-       - Membuka dialog pembentuk URL RTSP dengan opsi template kamera (Generic `rtsp://ip:554/live/ch0`, Hikvision `rtsp://ip:554/Streaming/Channels/101`, Dahua `rtsp://ip:554/cam/realmonitor?channel=1&subtype=0`, ONVIF).
-       - Field opsional username & password (misal: `admin:admin123`).
-       - Meluncurkan Intent ke pemutar video Android eksternal (VLC, MX Player, dll.).
+     - **Tombol Live Stream RTSP:** Membuka dialog pemilih format RTSP (Generic, Hikvision, Dahua, ONVIF) dengan opsi:
+       - **Mode Tonton In-App (Langsung di Aplikasi):** Membuka dialog player tertanam (`CctvLivePlayer`) berbasis AndroidX Media3 ExoPlayer RTSP.
+       - **Mode Buka di Pemutar Eksternal:** Meluncurkan Intent ke VLC/MX Player sebagai opsi cadangan.
      - **Tombol Web Console CCTV:** Membuka web interface kamera.
+
+4. **In-App Embedded RTSP Video Player (`CctvLivePlayer.kt` via AndroidX Media3):**
+   - Menggunakan pustaka resmi Google `androidx.media3:media3-exoplayer:1.3.1`, `media3-exoplayer-rtsp:1.3.1`, dan `media3-ui:1.3.1`.
+   - Mengintegrasikan `PlayerView` ke dalam Jetpack Compose melalui `AndroidView`.
+   - Konfigurasi `RtspMediaSource.Factory().setForceUseRtpTcp(true)` untuk menjamin stabilitas streaming video tanpa kehilangan paket di jaringan Wi-Fi lokal.
+   - Penanganan siklus hidup (*Lifecycle-Aware*): `player.release()` otomatis dipanggil saat dialog ditutup (`onDispose`) untuk mencegah memory leaks.
 
 ---
 
 ## 4. Rencana Verifikasi & Kualitas
 
-1. Unit Test di `NetworkDiscoveryRepositoryImplTest` untuk menguji:
+1. Unit Test di `NetworkDiscoveryLogicTest` untuk menguji:
    - Parsing dan klasifikasi `AuthStatus.UNPROTECTED_EXPOSURE` saat HTTP 200 OK tanpa auth.
    - Parsing dan klasifikasi `AuthStatus.PROTECTED_CREDENTIALS` saat HTTP 401 Unauthorized.
    - Handshake RTSP 200 vs 401.
