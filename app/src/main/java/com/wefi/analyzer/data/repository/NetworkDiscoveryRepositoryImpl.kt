@@ -933,6 +933,8 @@ class NetworkDiscoveryRepositoryImpl(
             hostObj.put("deviceType", host.probableDeviceType)
             hostObj.put("responseTimeMs", host.responseTimeMs)
             hostObj.put("isGateway", host.isGateway)
+            hostObj.put("assetCategory", host.assetCategory.name)
+            hostObj.put("hasCleartextManagement", host.hasCleartextManagement)
 
             val portArray = JSONArray()
             host.openPorts.forEach { p ->
@@ -986,6 +988,12 @@ class NetworkDiscoveryRepositoryImpl(
                 report.hosts.forEachIndexed { index, host ->
                     appendLine("[${index + 1}] Alamat IP: ${host.ip} ${if (host.isGateway) "(DEFAULT GATEWAY)" else ""}")
                     appendLine("    Tipe Perangkat : ${host.probableDeviceType}")
+                    if (host.assetCategory != AssetCategory.UNKNOWN) {
+                        appendLine("    Kategori Aset  : ${host.assetCategory.label}")
+                    }
+                    if (host.hasCleartextManagement) {
+                        appendLine("    PERINGATAN     : Protokol manajemen teks-terbuka (Cleartext) aktif! Rentan sniffing.")
+                    }
                     appendLine("    Vendor OUI     : ${host.vendor}")
                     appendLine("    Alamat MAC     : ${host.macAddress ?: "Tidak dapat dibaca (Restriksi Android 10+)"}")
                     appendLine("    Latensi Respons: ${host.responseTimeMs} ms")

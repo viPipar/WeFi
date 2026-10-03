@@ -102,7 +102,7 @@ class MainActivity : ComponentActivity() {
                 auditLogger = auditLogger,
                 verifiedStore = verifiedStore
             )
-            val networkDiscoveryViewModel = NetworkDiscoveryViewModel(discoveryRepo)
+            val networkDiscoveryViewModel = NetworkDiscoveryViewModel(discoveryRepo, scannerRepo)
 
             setContent {
                 WeFiTheme {

@@ -3,10 +3,16 @@ package com.wefi.analyzer.ui.screens.discovery
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.wefi.analyzer.domain.model.DiscoveredHost
+import com.wefi.analyzer.domain.model.HostRiskLevel
+import com.wefi.analyzer.domain.model.PmfMode
 import com.wefi.analyzer.domain.model.PortResult
 import com.wefi.analyzer.domain.model.PortStatus
 import com.wefi.analyzer.domain.model.ServiceInfo
+import com.wefi.analyzer.domain.model.WifiAccessPoint
+import com.wefi.analyzer.domain.model.WirelessSecurityAuditItem
+import com.wefi.analyzer.domain.model.WirelessSecurityEvaluator
 import com.wefi.analyzer.domain.repository.NetworkDiscoveryRepository
+import com.wefi.analyzer.domain.repository.WifiScannerRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,7 +25,8 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 
 class NetworkDiscoveryViewModel(
-    private val repository: NetworkDiscoveryRepository
+    private val repository: NetworkDiscoveryRepository,
+    private val wifiScannerRepository: WifiScannerRepository? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(NetworkDiscoveryUiState())
@@ -33,6 +40,57 @@ class NetworkDiscoveryViewModel(
 
     private val _isDeepScanningHost = MutableStateFlow(false)
     val isDeepScanningHost: StateFlow<Boolean> = _isDeepScanningHost.asStateFlow()
+
+    init {
+        wifiScannerRepository?.let { scanner ->
+            viewModelScope.launch {
+                scanner.scanResults.collect { aps ->
+                    evaluateWirelessAudits(aps)
+                }
+            }
+        }
+    }
+
+    fun evaluateWirelessAudits(aps: List<WifiAccessPoint>) {
+        val auditItems = aps.map { ap ->
+            WirelessSecurityEvaluator.evaluateAuditItem(ap, aps)
+        }
+        _uiState.update { state ->
+            state.copy(
+                wirelessAuditItems = auditItems,
+                reconStatSummary = calculateReconStats(state.hosts, auditItems)
+            )
+        }
+    }
+
+    fun setReconTab(tab: SecurityReconTab) {
+        _uiState.update { it.copy(selectedTab = tab) }
+    }
+
+    fun setWirelessFilterOnlyVulnerable(onlyVulnerable: Boolean) {
+        _uiState.update { it.copy(wirelessFilterOnlyVulnerable = onlyVulnerable) }
+    }
+
+    private fun calculateReconStats(
+        hosts: List<DiscoveredHost>,
+        wireless: List<WirelessSecurityAuditItem>
+    ): ReconStatSummary {
+        val totalHosts = hosts.size
+        val criticalHosts = hosts.count { it.riskProfile.level == HostRiskLevel.CRITICAL || it.riskProfile.level == HostRiskLevel.HIGH }
+        val cleartextPortsCount = hosts.count { it.hasCleartextManagement }
+        val wpsEnabled = wireless.count { it.hasWps }
+        val noPmf = wireless.count { it.pmfMode == PmfMode.NONE }
+        val rogueCount = wireless.count { it.isRogueTwinCandidate }
+
+        return ReconStatSummary(
+            totalHosts = totalHosts,
+            criticalHosts = criticalHosts,
+            cleartextPortsCount = cleartextPortsCount,
+            wpsEnabledApsCount = wpsEnabled,
+            noPmfApsCount = noPmf,
+            rogueCandidatesCount = rogueCount
+        )
+    }
 
     fun selectHostForDetail(host: DiscoveredHost?) {
         _selectedHostForDetail.value = host
@@ -70,7 +128,10 @@ class NetworkDiscoveryViewModel(
                         updated.copy(riskProfile = risk, assetCategory = category, hasCleartextManagement = cleartext)
                     } else h
                 }
-                state.copy(hosts = updatedHosts)
+                state.copy(
+                    hosts = updatedHosts,
+                    reconStatSummary = calculateReconStats(updatedHosts, state.wirelessAuditItems)
+                )
             }
 
             _selectedHostForDetail.update { current ->
@@ -312,7 +373,10 @@ class NetworkDiscoveryViewModel(
                     val updatedList = state.hosts.map { h ->
                         if (h.ip == host.ip) auditedHost else h
                     }
-                    state.copy(hosts = updatedList)
+                    state.copy(
+                        hosts = updatedList,
+                        reconStatSummary = calculateReconStats(updatedList, state.wirelessAuditItems)
+                    )
                 }
             }
 
@@ -330,7 +394,8 @@ class NetworkDiscoveryViewModel(
                     progress = 1.0f,
                     hosts = fullyAuditedHosts.sortedByDescending { h -> h.isGateway },
                     report = finalReport,
-                    statusMessage = "Audit selesai. Menemukan ${fullyAuditedHosts.size} host dalam ${duration / 1000}s."
+                    statusMessage = "Audit selesai. Menemukan ${fullyAuditedHosts.size} host dalam ${duration / 1000}s.",
+                    reconStatSummary = calculateReconStats(fullyAuditedHosts, it.wirelessAuditItems)
                 )
             }
         }

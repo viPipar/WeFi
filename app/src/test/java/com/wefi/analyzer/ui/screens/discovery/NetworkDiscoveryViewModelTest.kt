@@ -4,14 +4,21 @@ import com.wefi.analyzer.domain.model.BannerInfo
 import com.wefi.analyzer.domain.model.CveMatch
 import com.wefi.analyzer.domain.model.DiscoveredHost
 import com.wefi.analyzer.domain.model.DiscoveryReport
+import com.wefi.analyzer.domain.model.EnvironmentPreset
+import com.wefi.analyzer.domain.model.PmfMode
 import com.wefi.analyzer.domain.model.PortResult
 import com.wefi.analyzer.domain.model.PortStatus
 import com.wefi.analyzer.domain.model.ServiceInfo
 import com.wefi.analyzer.domain.model.SubnetInfo
+import com.wefi.analyzer.domain.model.WifiAccessPoint
 import com.wefi.analyzer.domain.repository.NetworkDiscoveryRepository
+import com.wefi.analyzer.domain.repository.WifiScannerRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -223,6 +230,79 @@ class NetworkDiscoveryViewModelTest {
         assertEquals(2, updatedSelected?.openPorts?.size)
         assertTrue(updatedSelected?.openPorts?.any { it.port == 8291 } == true)
     }
+
+    @Test
+    fun testSetReconTab_updatesSelectedTab() = runTest {
+        assertEquals(SecurityReconTab.LAN_SURFACE, viewModel.uiState.value.selectedTab)
+        viewModel.setReconTab(SecurityReconTab.WIRELESS_RECON)
+        assertEquals(SecurityReconTab.WIRELESS_RECON, viewModel.uiState.value.selectedTab)
+    }
+
+    @Test
+    fun testSetWirelessFilterOnlyVulnerable_updatesFilter() = runTest {
+        assertFalse(viewModel.uiState.value.wirelessFilterOnlyVulnerable)
+        viewModel.setWirelessFilterOnlyVulnerable(true)
+        assertTrue(viewModel.uiState.value.wirelessFilterOnlyVulnerable)
+    }
+
+    @Test
+    fun testEvaluateWirelessAudits_computesAuditItemsAndReconStats() = runTest {
+        val ap1 = WifiAccessPoint(
+            bssid = "00:11:22:33:44:55",
+            ssid = "Lab_Vulnerable",
+            rssi = -60,
+            frequencyMhz = 2437,
+            channel = 6,
+            security = "WPA2-PSK",
+            capabilities = "[WPA2-PSK-CCMP][WPS]"
+        )
+        val ap2 = WifiAccessPoint(
+            bssid = "AA:BB:CC:DD:EE:FF",
+            ssid = "Lab_Secure",
+            rssi = -55,
+            frequencyMhz = 2462,
+            channel = 11,
+            security = "WPA3-SAE",
+            capabilities = "[WPA3-SAE][PMF-R]"
+        )
+
+        viewModel.evaluateWirelessAudits(listOf(ap1, ap2))
+
+        val state = viewModel.uiState.value
+        assertEquals(2, state.wirelessAuditItems.size)
+        assertEquals(1, state.reconStatSummary.wpsEnabledApsCount)
+        assertEquals(1, state.reconStatSummary.noPmfApsCount)
+
+        val item1 = state.wirelessAuditItems.first { it.ssid == "Lab_Vulnerable" }
+        assertTrue(item1.hasWps)
+        assertEquals(PmfMode.NONE, item1.pmfMode)
+
+        val item2 = state.wirelessAuditItems.first { it.ssid == "Lab_Secure" }
+        assertFalse(item2.hasWps)
+        assertEquals(PmfMode.REQUIRED, item2.pmfMode)
+    }
+
+    @Test
+    fun testWifiScannerIntegration_updatesReconStateAutomatically() = runTest {
+        val fakeScanner = FakeWifiScannerRepository()
+        val vmWithScanner = NetworkDiscoveryViewModel(fakeRepo, fakeScanner)
+
+        val ap = WifiAccessPoint(
+            bssid = "11:22:33:44:55:66",
+            ssid = "Rogue_Twin",
+            rssi = -40,
+            frequencyMhz = 2412,
+            channel = 1,
+            security = "Open",
+            capabilities = "[ESS]"
+        )
+        fakeScanner.emitAps(listOf(ap))
+        advanceUntilIdle()
+
+        val state = vmWithScanner.uiState.value
+        assertEquals(1, state.wirelessAuditItems.size)
+        assertEquals("Rogue_Twin", state.wirelessAuditItems[0].ssid)
+    }
 }
 
 private class FakeNetworkDiscoveryRepository : NetworkDiscoveryRepository {
@@ -298,4 +378,19 @@ private class FakeNetworkDiscoveryRepository : NetworkDiscoveryRepository {
     override fun exportReportText(report: DiscoveryReport): String = "STUB_TEXT_REPORT"
 
     override fun teardown() {}
+}
+
+private class FakeWifiScannerRepository : WifiScannerRepository {
+    private val _scanResults = MutableStateFlow<List<WifiAccessPoint>>(emptyList())
+    override val scanResults: StateFlow<List<WifiAccessPoint>> = _scanResults.asStateFlow()
+    override val isScanning: StateFlow<Boolean> = MutableStateFlow(false)
+    override val selectedPreset: StateFlow<EnvironmentPreset> = MutableStateFlow(EnvironmentPreset.INDOOR)
+    override val isWifiEnabled: StateFlow<Boolean> = MutableStateFlow(true)
+
+    fun emitAps(aps: List<WifiAccessPoint>) {
+        _scanResults.value = aps
+    }
+
+    override fun startScan() {}
+    override fun setEnvironmentPreset(preset: EnvironmentPreset) {}
 }
