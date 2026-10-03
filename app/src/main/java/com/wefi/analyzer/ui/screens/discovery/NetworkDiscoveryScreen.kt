@@ -66,8 +66,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.material.icons.rounded.CheckCircle
 import com.wefi.analyzer.domain.model.AuthPostureResult
 import com.wefi.analyzer.domain.model.AuthStatus
+import com.wefi.analyzer.domain.model.RtspProbePath
 import com.wefi.analyzer.ui.components.CctvLivePlayerDialog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -110,6 +113,8 @@ fun NetworkDiscoveryScreen(
     val isDeepScanning by viewModel.isDeepScanningHost.collectAsState()
     val authPostureState by viewModel.authPostureState.collectAsState()
     val isTestingAuth by viewModel.isTestingAuth.collectAsState()
+    val rtspProbeResults by viewModel.rtspProbeResults.collectAsState()
+    val isProbingRtsp by viewModel.isProbingRtsp.collectAsState()
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
     var isLimitationsExpanded by remember { mutableStateOf(false) }
@@ -291,9 +296,12 @@ fun NetworkDiscoveryScreen(
             isDeepScanning = isDeepScanning,
             authPostureState = authPostureState,
             isTestingAuth = isTestingAuth,
+            rtspProbeResults = rtspProbeResults,
+            isProbingRtsp = isProbingRtsp,
             onDismiss = { viewModel.selectHostForDetail(null) },
             onDeepScan = { viewModel.scanHostDeep(selectedHost!!) },
-            onTestAuthPosture = { port, proto -> viewModel.testHostAuthPosture(selectedHost!!, port, proto) }
+            onTestAuthPosture = { port, proto -> viewModel.testHostAuthPosture(selectedHost!!, port, proto) },
+            onProbeRtspPaths = { port -> viewModel.probeHostRtspPaths(selectedHost!!, port) }
         )
     }
 }
@@ -885,9 +893,12 @@ private fun HostDetailBottomSheet(
     isDeepScanning: Boolean,
     authPostureState: Map<String, AuthPostureResult>,
     isTestingAuth: Boolean,
+    rtspProbeResults: Map<String, List<RtspProbePath>>,
+    isProbingRtsp: Boolean,
     onDismiss: () -> Unit,
     onDeepScan: () -> Unit,
-    onTestAuthPosture: (port: Int, protocolHint: String?) -> Unit
+    onTestAuthPosture: (port: Int, protocolHint: String?) -> Unit,
+    onProbeRtspPaths: (port: Int) -> Unit
 ) {
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
@@ -1758,6 +1769,113 @@ private fun HostDetailBottomSheet(
                                     color = if (cctvChannelPreset == preset) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                                 )
+                            }
+                        }
+                    }
+
+                    // Smart Auto-Probe RTSP Paths for OEM / Generic Cameras
+                    val detectedPaths = rtspProbeResults[host.ip] ?: emptyList()
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Smart Auto-Probe RTSP",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "Deteksi otomatis path CCTV OEM / Generic",
+                                        fontSize = 10.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                OutlinedButton(
+                                    onClick = { onProbeRtspPaths(554) },
+                                    enabled = !isProbingRtsp,
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = QualityAmber)
+                                ) {
+                                    if (isProbingRtsp) {
+                                        CircularProgressIndicator(modifier = Modifier.size(12.dp), strokeWidth = 2.dp, color = QualityAmber)
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(text = "Memindai...", fontSize = 11.sp)
+                                    } else {
+                                        Icon(imageVector = Icons.Rounded.Search, contentDescription = null, modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(text = "Scan Path", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                    }
+                                }
+                            }
+
+                            if (isProbingRtsp) {
+                                LinearProgressIndicator(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(3.dp)
+                                        .clip(RoundedCornerShape(2.dp)),
+                                    color = QualityAmber
+                                )
+                            }
+
+                            if (detectedPaths.isNotEmpty()) {
+                                Text(
+                                    text = "Path Ditemukan (${detectedPaths.size} channel):",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = QualityGreen
+                                )
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    detectedPaths.forEach { probePath ->
+                                        val isSelected = (cctvChannelPreset == "Kustom" && cctvCustomPath == probePath.path)
+                                        Surface(
+                                            modifier = Modifier.clickable {
+                                                cctvChannelPreset = "Kustom"
+                                                cctvCustomPath = probePath.path
+                                            },
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = if (isSelected) QualityGreen else if (probePath.requiresAuth) QualityAmber.copy(alpha = 0.15f) else QualityGreen.copy(alpha = 0.15f),
+                                            border = BorderStroke(1.dp, if (isSelected) QualityGreen else if (probePath.requiresAuth) QualityAmber else QualityGreen)
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = if (probePath.requiresAuth) Icons.Rounded.Lock else Icons.Rounded.CheckCircle,
+                                                    contentDescription = null,
+                                                    tint = if (isSelected) Color.White else if (probePath.requiresAuth) QualityAmber else QualityGreen,
+                                                    modifier = Modifier.size(12.dp)
+                                                )
+                                                Text(
+                                                    text = "${probePath.path} (${if (probePath.requiresAuth) "401 Sandi" else "Bebas"})",
+                                                    fontSize = 10.sp,
+                                                    fontFamily = FontFamily.Monospace,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }

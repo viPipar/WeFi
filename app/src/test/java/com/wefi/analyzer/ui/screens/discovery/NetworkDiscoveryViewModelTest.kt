@@ -10,6 +10,7 @@ import com.wefi.analyzer.domain.model.EnvironmentPreset
 import com.wefi.analyzer.domain.model.PmfMode
 import com.wefi.analyzer.domain.model.PortResult
 import com.wefi.analyzer.domain.model.PortStatus
+import com.wefi.analyzer.domain.model.RtspProbePath
 import com.wefi.analyzer.domain.model.ServiceInfo
 import com.wefi.analyzer.domain.model.SubnetInfo
 import com.wefi.analyzer.domain.model.WifiAccessPoint
@@ -328,6 +329,37 @@ class NetworkDiscoveryViewModelTest {
         assertEquals(401, result.httpStatusCode)
         assertFalse(viewModel.isTestingAuth.value)
     }
+
+    @Test
+    fun probeHostRtspPaths_success_updatesRtspProbeResults() = runTest {
+        val host = DiscoveredHost(
+            ip = "192.168.1.100",
+            macAddress = "AA:BB:CC:DD:EE:FF",
+            vendor = "Generic OEM Camera",
+            responseTimeMs = 15L,
+            openPorts = listOf(PortResult(554, PortStatus.OPEN, "RTSP", 12L)),
+            services = emptyList(),
+            probableDeviceType = "Kamera CCTV Lab",
+            isGateway = false,
+            assetCategory = com.wefi.analyzer.domain.model.AssetCategory.SURVEILLANCE_CCTV,
+            riskProfile = com.wefi.analyzer.domain.model.HostRiskProfile(com.wefi.analyzer.domain.model.HostRiskLevel.HIGH, 60, listOf("RTSP port open")),
+            hasCleartextManagement = false
+        )
+
+        viewModel.probeHostRtspPaths(host, 554)
+        advanceUntilIdle()
+
+        val probeResults = viewModel.rtspProbeResults.value
+        assertTrue(probeResults.containsKey("192.168.1.100"))
+        val paths = probeResults["192.168.1.100"]!!
+        assertEquals(2, paths.size)
+        assertEquals("live/ch0", paths[0].path)
+        assertTrue(paths[0].isAccessible)
+        assertFalse(paths[0].requiresAuth)
+        assertEquals("stream1", paths[1].path)
+        assertTrue(paths[1].requiresAuth)
+        assertFalse(viewModel.isProbingRtsp.value)
+    }
 }
 
 private class FakeNetworkDiscoveryRepository : NetworkDiscoveryRepository {
@@ -413,6 +445,17 @@ private class FakeNetworkDiscoveryRepository : NetworkDiscoveryRepository {
             httpStatusCode = 200,
             description = "Stub auth test result"
         )
+    }
+
+    var stubRtspPaths: List<RtspProbePath> = emptyList()
+
+    override suspend fun probeRtspPaths(hostIp: String, port: Int): List<RtspProbePath> {
+        return stubRtspPaths.ifEmpty {
+            listOf(
+                RtspProbePath("live/ch0", "rtsp://$hostIp:$port/live/ch0", true, false, 200, "200 OK"),
+                RtspProbePath("stream1", "rtsp://$hostIp:$port/stream1", true, true, 401, "401 Unauthorized")
+            )
+        }
     }
 
     override fun teardown() {}

@@ -9,6 +9,7 @@ import com.wefi.analyzer.domain.model.HostRiskLevel
 import com.wefi.analyzer.domain.model.PmfMode
 import com.wefi.analyzer.domain.model.PortResult
 import com.wefi.analyzer.domain.model.PortStatus
+import com.wefi.analyzer.domain.model.RtspProbePath
 import com.wefi.analyzer.domain.model.ServiceInfo
 import com.wefi.analyzer.domain.model.WifiAccessPoint
 import com.wefi.analyzer.domain.model.WirelessSecurityAuditItem
@@ -48,6 +49,12 @@ class NetworkDiscoveryViewModel(
 
     private val _isTestingAuth = MutableStateFlow(false)
     val isTestingAuth: StateFlow<Boolean> = _isTestingAuth.asStateFlow()
+
+    private val _rtspProbeResults = MutableStateFlow<Map<String, List<RtspProbePath>>>(emptyMap())
+    val rtspProbeResults: StateFlow<Map<String, List<RtspProbePath>>> = _rtspProbeResults.asStateFlow()
+
+    private val _isProbingRtsp = MutableStateFlow(false)
+    val isProbingRtsp: StateFlow<Boolean> = _isProbingRtsp.asStateFlow()
 
     init {
         wifiScannerRepository?.let { scanner ->
@@ -178,6 +185,22 @@ class NetworkDiscoveryViewModel(
                 }
             } finally {
                 _isTestingAuth.value = false
+            }
+        }
+    }
+
+    fun probeHostRtspPaths(host: DiscoveredHost, port: Int = 554) {
+        if (_isProbingRtsp.value) return
+        viewModelScope.launch {
+            _isProbingRtsp.value = true
+            try {
+                val results = repository.probeRtspPaths(host.ip, port)
+                _rtspProbeResults.update { current ->
+                    current + (host.ip to results)
+                }
+            } catch (_: Exception) {
+            } finally {
+                _isProbingRtsp.value = false
             }
         }
     }

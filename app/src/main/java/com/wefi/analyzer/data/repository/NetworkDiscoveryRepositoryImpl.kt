@@ -19,6 +19,7 @@ import com.wefi.analyzer.domain.model.HostRiskProfile
 import com.wefi.analyzer.domain.model.PortResult
 import com.wefi.analyzer.domain.model.PortStatus
 import com.wefi.analyzer.domain.model.ServiceInfo
+import com.wefi.analyzer.domain.model.RtspProbePath
 import com.wefi.analyzer.domain.model.SubnetInfo
 import com.wefi.analyzer.domain.repository.NetworkDiscoveryRepository
 import javax.net.ssl.SSLContext
@@ -27,6 +28,8 @@ import javax.net.ssl.X509TrustManager
 import java.security.SecureRandom
 import java.security.cert.X509Certificate
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -1390,6 +1393,91 @@ class NetworkDiscoveryRepositoryImpl(
             }
         } catch (e: Exception) {
             Log.w(tag, "Gagal melepaskan multicast lock: ${e.message}")
+        }
+    }
+
+    companion object {
+        val COMMON_RTSP_PATHS = listOf(
+            "live/ch0",
+            "live/ch1",
+            "stream1",
+            "stream2",
+            "11",
+            "12",
+            "h264Preview_01_main",
+            "onvif1",
+            "live.sdp",
+            "media.sdp",
+            "ch0",
+            "Streaming/Channels/101",
+            "cam/realmonitor?channel=1&subtype=0",
+            "video1"
+        )
+    }
+
+    override suspend fun probeRtspPaths(hostIp: String, port: Int): List<RtspProbePath> = withContext(Dispatchers.IO) {
+        val results = mutableListOf<RtspProbePath>()
+        COMMON_RTSP_PATHS.chunked(3).forEach { chunk ->
+            val chunkResults = chunk.map { path ->
+                async {
+                    probeSingleRtspPath(hostIp, port, path)
+                }
+            }.awaitAll().filterNotNull()
+            results.addAll(chunkResults)
+        }
+        results.sortedWith(compareByDescending<RtspProbePath> { it.isAccessible }.thenBy { it.requiresAuth })
+    }
+
+    private fun probeSingleRtspPath(hostIp: String, port: Int, path: String): RtspProbePath? {
+        val fullUri = "rtsp://$hostIp:$port/$path"
+        return try {
+            Socket().use { socket ->
+                socket.soTimeout = 1200
+                socket.connect(InetSocketAddress(hostIp, port), 1200)
+
+                val writer = OutputStreamWriter(socket.getOutputStream(), "UTF-8")
+                writer.write("DESCRIBE $fullUri RTSP/1.0\r\nCSeq: 1\r\nAccept: application/sdp\r\nUser-Agent: WeFi-Probe/1.0\r\n\r\n")
+                writer.flush()
+
+                val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+                val firstLine = reader.readLine() ?: return null
+
+                val parts = firstLine.split(" ", limit = 3)
+                val code = parts.getOrNull(1)?.toIntOrNull() ?: 0
+                val msg = parts.getOrNull(2) ?: firstLine
+
+                when (code) {
+                    200 -> RtspProbePath(
+                        path = path,
+                        fullUri = fullUri,
+                        isAccessible = true,
+                        requiresAuth = false,
+                        statusCode = 200,
+                        statusMessage = "Terbuka Bebas (200 OK)"
+                    )
+                    401 -> RtspProbePath(
+                        path = path,
+                        fullUri = fullUri,
+                        isAccessible = true,
+                        requiresAuth = true,
+                        statusCode = 401,
+                        statusMessage = "Valid, Perlu Kredensial (401)"
+                    )
+                    404 -> null
+                    else -> if (code in 200..399) {
+                        RtspProbePath(
+                            path = path,
+                            fullUri = fullUri,
+                            isAccessible = true,
+                            requiresAuth = false,
+                            statusCode = code,
+                            statusMessage = "Respon $code: $msg"
+                        )
+                    } else null
+                }
+            }
+        } catch (_: Exception) {
+            null
         }
     }
 

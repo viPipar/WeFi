@@ -36,6 +36,8 @@ interface NetworkDiscoveryRepository {
     
     suspend fun testAuthPosture(hostIp: String, port: Int, protocolHint: String? = null): com.wefi.analyzer.domain.model.AuthPostureResult
     
+    suspend fun probeRtspPaths(hostIp: String, port: Int = 554): List<com.wefi.analyzer.domain.model.RtspProbePath>
+    
     fun generateReport(hosts: List<DiscoveredHost>, durationMs: Long, subnet: String): DiscoveryReport
     
     fun exportReportJson(report: DiscoveryReport): String

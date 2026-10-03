@@ -119,3 +119,12 @@ data class AuthPostureResult(
     val description: String,
     val timestamp: Long = System.currentTimeMillis()
 )
+
+data class RtspProbePath(
+    val path: String,
+    val fullUri: String,
+    val isAccessible: Boolean,
+    val requiresAuth: Boolean,
+    val statusCode: Int,
+    val statusMessage: String
+)
