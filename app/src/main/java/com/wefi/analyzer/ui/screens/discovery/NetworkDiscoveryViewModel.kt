@@ -15,6 +15,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentLinkedQueue
 
 class NetworkDiscoveryViewModel(
     private val repository: NetworkDiscoveryRepository
@@ -69,8 +71,8 @@ class NetworkDiscoveryViewModel(
                 )
             }
 
-            val discoveredMap = mutableMapOf<String, DiscoveredHost>()
-            val discoveredServices = mutableListOf<ServiceInfo>()
+            val discoveredMap = ConcurrentHashMap<String, DiscoveredHost>()
+            val discoveredServices = ConcurrentLinkedQueue<ServiceInfo>()
 
             // 1. Jalankan SSDP & mDNS discovery secara paralel dengan Ping Sweep
             val ssdpJob = async {
