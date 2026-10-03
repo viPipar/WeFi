@@ -41,6 +41,20 @@ data class ServiceInfo(
     val source: String // "mDNS" or "SSDP" or "PortProbe"
 )
 
+enum class HostRiskLevel(val label: String) {
+    SAFE("Aman"),
+    LOW("Rendah"),
+    MEDIUM("Menengah"),
+    HIGH("Tinggi"),
+    CRITICAL("Kritis")
+}
+
+data class HostRiskProfile(
+    val level: HostRiskLevel = HostRiskLevel.SAFE,
+    val score: Int = 0,
+    val highlights: List<String> = emptyList()
+)
+
 data class DiscoveredHost(
     val ip: String,
     val macAddress: String? = null,
@@ -51,7 +65,8 @@ data class DiscoveredHost(
     val banner: BannerInfo? = null,
     val probableDeviceType: String = "Perangkat Jaringan",
     val cveMatches: List<CveMatch> = emptyList(),
-    val isGateway: Boolean = false
+    val isGateway: Boolean = false,
+    val riskProfile: HostRiskProfile = HostRiskProfile()
 )
 
 data class SubnetInfo(

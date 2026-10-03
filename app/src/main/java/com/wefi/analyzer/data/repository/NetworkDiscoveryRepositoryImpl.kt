@@ -11,6 +11,8 @@ import com.wefi.analyzer.domain.model.BannerInfo
 import com.wefi.analyzer.domain.model.CveMatch
 import com.wefi.analyzer.domain.model.DiscoveredHost
 import com.wefi.analyzer.domain.model.DiscoveryReport
+import com.wefi.analyzer.domain.model.HostRiskLevel
+import com.wefi.analyzer.domain.model.HostRiskProfile
 import com.wefi.analyzer.domain.model.PortResult
 import com.wefi.analyzer.domain.model.PortStatus
 import com.wefi.analyzer.domain.model.ServiceInfo
@@ -535,21 +537,96 @@ class NetworkDiscoveryRepositoryImpl(
      */
     private fun getStaticServiceGuess(port: Int): String {
         return when (port) {
+            21 -> "FTP"
             22 -> "SSH"
             23 -> "Telnet"
+            25 -> "SMTP"
             53 -> "DNS"
-            80 -> "HTTP"
+            80 -> "HTTP Web Admin"
+            110 -> "POP3"
+            139 -> "NetBIOS"
             443 -> "HTTPS"
+            445 -> "SMB (File Share)"
             554 -> "RTSP (CCTV Stream)"
+            1883 -> "MQTT (IoT Broker)"
+            3128 -> "Squid / HTTP Proxy"
+            3306 -> "MySQL Database"
+            3389 -> "RDP Remote Desktop"
             3702 -> "WS-Discovery / ONVIF"
             5000 -> "UPnP / Web Service"
             8000 -> "Hikvision SDK / Web"
             8080 -> "HTTP-Alt"
+            8291 -> "MikroTik Winbox"
             8443 -> "HTTPS-Alt"
             8888 -> "HTTP-Proxy / Web"
+            9000 -> "Portainer / Web API"
             37777 -> "Dahua DVR/NVR Media"
             else -> "Port $port"
         }
+    }
+
+    override fun evaluateHostRisk(host: DiscoveredHost): HostRiskProfile {
+        val openPortNumbers = host.openPorts.map { it.port }.toSet()
+        val cveMaxCvss = host.cveMatches.maxOfOrNull { it.cvssScore } ?: 0.0
+        val highlights = mutableListOf<String>()
+
+        var score = 0
+
+        // 1. CVE Risk Evaluation
+        if (cveMaxCvss >= 9.0) {
+            score += 50
+            highlights.add("CVE Kritis terdeteksi (CVSS $cveMaxCvss)")
+        } else if (cveMaxCvss >= 7.0) {
+            score += 30
+            highlights.add("CVE Tinggi terdeteksi (CVSS $cveMaxCvss)")
+        } else if (cveMaxCvss >= 4.0) {
+            score += 15
+            highlights.add("CVE Menengah terdeteksi (CVSS $cveMaxCvss)")
+        }
+
+        // 2. Open Port Risk Evaluation
+        if (openPortNumbers.contains(23)) {
+            score += 35
+            highlights.add("Port 23 (Telnet) terbuka tanpa enkripsi")
+        }
+        if (openPortNumbers.contains(445) || openPortNumbers.contains(139)) {
+            score += 25
+            highlights.add("Port 445/139 (SMB/NetBIOS) terbuka")
+        }
+        if (openPortNumbers.contains(8291)) {
+            score += 15
+            highlights.add("Port 8291 (MikroTik Winbox) terbuka")
+        }
+        if (openPortNumbers.contains(21)) {
+            score += 20
+            highlights.add("Port 21 (FTP plaintext) terbuka")
+        }
+        if (openPortNumbers.contains(1883)) {
+            score += 15
+            highlights.add("Port 1883 (MQTT Broker) terbuka")
+        }
+        if (openPortNumbers.contains(80) || openPortNumbers.contains(8080)) {
+            score += 10
+            highlights.add("HTTP Web Admin terbuka")
+        }
+        if (openPortNumbers.contains(554)) {
+            score += 10
+            highlights.add("RTSP CCTV Stream aktif")
+        }
+
+        val level = when {
+            score >= 60 || cveMaxCvss >= 9.0 -> HostRiskLevel.CRITICAL
+            score >= 35 || cveMaxCvss >= 7.0 -> HostRiskLevel.HIGH
+            score >= 15 || cveMaxCvss >= 4.0 -> HostRiskLevel.MEDIUM
+            score > 0 -> HostRiskLevel.LOW
+            else -> HostRiskLevel.SAFE
+        }
+
+        return HostRiskProfile(
+            level = level,
+            score = score.coerceAtMost(100),
+            highlights = highlights
+        )
     }
 
     /**

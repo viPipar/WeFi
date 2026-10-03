@@ -226,6 +226,14 @@ private class FakeNetworkDiscoveryRepository : NetworkDiscoveryRepository {
         return if (openPorts.contains(554)) "Kamera CCTV / NVR Lab" else "Router / Gateway Lab"
     }
 
+    override fun evaluateHostRisk(host: DiscoveredHost): com.wefi.analyzer.domain.model.HostRiskProfile {
+        return com.wefi.analyzer.domain.model.HostRiskProfile(
+            level = com.wefi.analyzer.domain.model.HostRiskLevel.LOW,
+            score = 10,
+            highlights = listOf("Stub risk")
+        )
+    }
+
     override fun generateReport(hosts: List<DiscoveredHost>, durationMs: Long, subnet: String): DiscoveryReport {
         return DiscoveryReport(
             timestamp = 1000L,

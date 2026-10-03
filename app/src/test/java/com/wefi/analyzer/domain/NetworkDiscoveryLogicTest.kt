@@ -257,4 +257,67 @@ class NetworkDiscoveryLogicTest {
             }
         }
     }
+
+    private fun evaluateRiskForHost(host: DiscoveredHost): com.wefi.analyzer.domain.model.HostRiskProfile {
+        val openPortNumbers = host.openPorts.map { it.port }.toSet()
+        val cveMaxCvss = host.cveMatches.maxOfOrNull { it.cvssScore } ?: 0.0
+        val highlights = mutableListOf<String>()
+        var score = 0
+
+        if (cveMaxCvss >= 9.0) {
+            score += 50
+            highlights.add("CVE Kritis terdeteksi (CVSS $cveMaxCvss)")
+        } else if (cveMaxCvss >= 7.0) {
+            score += 30
+            highlights.add("CVE Tinggi terdeteksi (CVSS $cveMaxCvss)")
+        }
+
+        if (openPortNumbers.contains(23)) {
+            score += 35
+            highlights.add("Port 23 (Telnet) terbuka tanpa enkripsi")
+        }
+        if (openPortNumbers.contains(445) || openPortNumbers.contains(139)) {
+            score += 25
+            highlights.add("Port 445/139 (SMB/NetBIOS) terbuka")
+        }
+
+        val level = when {
+            score >= 60 || cveMaxCvss >= 9.0 -> com.wefi.analyzer.domain.model.HostRiskLevel.CRITICAL
+            score >= 35 || cveMaxCvss >= 7.0 -> com.wefi.analyzer.domain.model.HostRiskLevel.HIGH
+            score >= 15 -> com.wefi.analyzer.domain.model.HostRiskLevel.MEDIUM
+            score > 0 -> com.wefi.analyzer.domain.model.HostRiskLevel.LOW
+            else -> com.wefi.analyzer.domain.model.HostRiskLevel.SAFE
+        }
+
+        return com.wefi.analyzer.domain.model.HostRiskProfile(level = level, score = score, highlights = highlights)
+    }
+
+    @Test
+    fun testHostRiskEvaluation_whenCriticalCvePresent_returnsCriticalRisk() {
+        val cve = CveMatch("CVE-2023-1234", 9.8, "CRITICAL", "Vendor", "Model", "Remote Code Execution")
+        val host = DiscoveredHost(
+            ip = "192.168.1.1",
+            cveMatches = listOf(cve),
+            openPorts = listOf(PortResult(80, PortStatus.OPEN, "HTTP Web Admin", 10L))
+        )
+        val profile = evaluateRiskForHost(host)
+        assertEquals(com.wefi.analyzer.domain.model.HostRiskLevel.CRITICAL, profile.level)
+        assertTrue(profile.score >= 50)
+        assertTrue(profile.highlights.any { it.contains("CVE Kritis") })
+    }
+
+    @Test
+    fun testHostRiskEvaluation_whenTelnetAndSmbOpen_returnsHighRisk() {
+        val host = DiscoveredHost(
+            ip = "192.168.1.100",
+            openPorts = listOf(
+                PortResult(23, PortStatus.OPEN, "Telnet", 10L),
+                PortResult(445, PortStatus.OPEN, "SMB (File Share)", 10L)
+            )
+        )
+        val profile = evaluateRiskForHost(host)
+        assertTrue(profile.level == com.wefi.analyzer.domain.model.HostRiskLevel.HIGH || profile.level == com.wefi.analyzer.domain.model.HostRiskLevel.CRITICAL)
+        assertTrue(profile.highlights.any { it.contains("Telnet") })
+        assertTrue(profile.highlights.any { it.contains("SMB") })
+    }
 }

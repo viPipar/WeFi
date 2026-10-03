@@ -28,6 +28,8 @@ interface NetworkDiscoveryRepository {
     
     fun identifyDeviceType(openPorts: List<Int>, banner: BannerInfo?, services: List<ServiceInfo>): String
     
+    fun evaluateHostRisk(host: DiscoveredHost): com.wefi.analyzer.domain.model.HostRiskProfile
+    
     fun generateReport(hosts: List<DiscoveredHost>, durationMs: Long, subnet: String): DiscoveryReport
     
     fun exportReportJson(report: DiscoveryReport): String
