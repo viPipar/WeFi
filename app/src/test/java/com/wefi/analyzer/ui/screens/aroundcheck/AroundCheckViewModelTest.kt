@@ -735,6 +735,22 @@ class AroundCheckViewModelTest {
         assertFalse(viewModel.isSequentialTesting.value)
         assertTrue(viewModel.sequentialTestMessage.value.contains("Pilih minimal 1 router"))
     }
+
+    @Test
+    fun startBfsTraversal_whenCurrentlyConnectedToCandidate_skipsWithoutInfiniteLoop() = runTest(testDispatcher) {
+        val item1 = WifiScanItem("Lab-Connected", "00:11:22:33:44:01", -50, WifiSecurityType.WPA2, 2412, 1)
+        val item2 = WifiScanItem("Lab-Target", "00:11:22:33:44:02", -60, WifiSecurityType.WPA2, 2437, 6)
+        fakeScanner.setScanItems(listOf(item1, item2))
+        testScheduler.advanceUntilIdle()
+
+        fakeConnector.isCurrentlyConnectedResult = true
+        viewModel.setTopPasswordInput("password123")
+        viewModel.startBfsTraversal()
+        testScheduler.advanceUntilIdle()
+
+        // Harus selesai dan tidak terjadi infinite loop
+        assertFalse(viewModel.isSequentialTesting.value)
+    }
 }
 
 

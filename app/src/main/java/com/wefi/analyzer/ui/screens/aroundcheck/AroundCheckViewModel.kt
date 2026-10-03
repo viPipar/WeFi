@@ -441,6 +441,7 @@ class AroundCheckViewModel(
                 if (connector.isCurrentlyConnectedTo(candidate.ssid, candidate.bssid)) {
                     _sequentialTestMessage.value = "BFS [${index + 1}/${scanItems.size}]: ${candidate.ssid} dilewati (perangkat sudah terhubung via OS)."
                     delay(500L)
+                    index++
                     continue
                 }
 
@@ -497,6 +498,9 @@ class AroundCheckViewModel(
                 }
             }
             _isSequentialTesting.value = false
+            _currentCandidateIndex.value = -1
+            _sequentialTestMessage.value = "Semua Wi-Fi selesai diuji. Tidak ada yang berhasil tersambung."
+            sendSnackbar("Semua Wi-Fi selesai diuji.")
         }
     }
 
