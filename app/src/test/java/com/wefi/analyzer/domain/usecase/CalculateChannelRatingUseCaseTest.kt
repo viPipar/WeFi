@@ -17,6 +17,13 @@ class CalculateChannelRatingUseCaseTest {
     }
 
     @Test
+    fun `empty spectrum in 2_4GHz recommends only standard non-overlapping channels 1, 6, 11`() {
+        val ratings = useCase.execute(emptyList(), bandGhz = 2.4)
+        val recommendedChannels = ratings.filter { it.isRecommended }.map { it.channel }
+        assertEquals(listOf(1, 6, 11), recommendedChannels)
+    }
+
+    @Test
     fun `channel crowded with strong APs has lower stars than clean channel`() {
         val crowdedAp = WifiAccessPoint(
             bssid = "00:11:22:33:44:55",

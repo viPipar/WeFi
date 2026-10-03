@@ -69,9 +69,31 @@ class CalculateChannelRatingUseCase {
             )
         }
 
+        if (apsInBand.isEmpty()) {
+            val defaultRecommended = if (bandGhz == 2.4) listOf(1, 6, 11) else listOf(36, 40, 44, 48)
+            return ratings.map {
+                val isRec = it.channel in defaultRecommended
+                val emptyReason = if (isRec) {
+                    if (bandGhz == 2.4) "Spektrum bersih, kanal non-overlapping 1/6/11 sangat ideal"
+                    else "Spektrum bersih, kanal UNII-1 standar sangat ideal"
+                } else {
+                    it.reason
+                }
+                it.copy(isRecommended = isRec, reason = emptyReason)
+            }
+        }
+
         val maxStars = ratings.maxOfOrNull { it.stars } ?: 10
+        val nonOverlapping24 = setOf(1, 6, 11)
+        val hasMaxInNonOverlapping = bandGhz == 2.4 && ratings.any { it.channel in nonOverlapping24 && it.stars == maxStars }
+
         return ratings.map {
-            if (it.stars == maxStars) it.copy(isRecommended = true) else it
+            val isRec = if (hasMaxInNonOverlapping) {
+                it.channel in nonOverlapping24 && it.stars == maxStars
+            } else {
+                it.stars == maxStars
+            }
+            it.copy(isRecommended = isRec)
         }
     }
 }

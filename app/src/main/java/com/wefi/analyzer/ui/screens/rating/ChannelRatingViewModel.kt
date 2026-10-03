@@ -20,6 +20,8 @@ class ChannelRatingViewModel(
     private val _selectedBand = MutableStateFlow(2.4)
     val selectedBand: StateFlow<Double> = _selectedBand.asStateFlow()
 
+    val isWifiEnabled: StateFlow<Boolean> = scannerRepository.isWifiEnabled
+
     val channelRatings: StateFlow<List<ChannelRating>> = combine(
         scannerRepository.scanResults,
         _selectedBand

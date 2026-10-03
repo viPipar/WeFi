@@ -2,6 +2,7 @@ package com.wefi.analyzer.ui.screens.rating
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -20,6 +21,9 @@ import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarBorder
+import androidx.compose.material.icons.rounded.Wifi
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -28,6 +32,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -107,54 +112,163 @@ fun ChannelRatingScreen(
             onItemSelected = { viewModel.setBand(bands[it]) }
         )
 
-        Spacer(modifier = Modifier.height(14.dp))
+        val isWifiEnabled by viewModel.isWifiEnabled.collectAsState()
+        val context = LocalContext.current
 
-        // 3. Recommendation Card Hero
-        bestChannel?.let { best ->
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                color = BlynkBlueTint,
-                border = androidx.compose.foundation.BorderStroke(1.dp, BlynkBlue.copy(alpha = 0.4f))
+        if (!isWifiEnabled) {
+            BlynkCard(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                padding = 24.dp
             ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Icon(
-                        imageVector = Icons.Rounded.CheckCircle,
-                        contentDescription = null,
-                        tint = BlynkBlue,
-                        modifier = Modifier.size(32.dp)
+                    Box(
+                        modifier = Modifier
+                            .size(64.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFFEF3C7)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Wifi,
+                            contentDescription = null,
+                            tint = Color(0xFFD97706),
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Wi-Fi Sedang Nonaktif",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column {
-                        Text(
-                            text = "Rekomendasi Terbaik: Kanal ${best.channel}",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = BlynkBlue
-                        )
-                        Text(
-                            text = "Kanal ${best.channel} (${best.frequencyMhz} MHz) paling minim gangguan tetangga dengan skor rating ${best.stars}/10 bintang.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Aktifkan Wi-Fi perangkat Anda untuk menganalisis interferensi kanal dan rekomendasi frekuensi.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(20.dp))
+                    Button(
+                        onClick = {
+                            try {
+                                context.startActivity(android.content.Intent(android.provider.Settings.ACTION_WIFI_SETTINGS))
+                            } catch (e: Exception) {
+                                viewModel.triggerScan()
+                            }
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = BlynkBlue)
+                    ) {
+                        Text("Buka Pengaturan Wi-Fi", color = Color.White, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
-            Spacer(modifier = Modifier.height(14.dp))
-        }
+        } else if (ratings.isEmpty()) {
+            BlynkCard(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                padding = 24.dp
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(64.dp)
+                            .clip(CircleShape)
+                            .background(BlynkBlueTint),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Refresh,
+                            contentDescription = null,
+                            tint = BlynkBlue,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Memuat Analisis Kanal...",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Tekan tombol pindai ulang di kanan atas untuk memindai spektrum frekuensi.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(20.dp))
+                    Button(
+                        onClick = { viewModel.triggerScan() },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = BlynkBlue)
+                    ) {
+                        Text("Pindai Sekarang", color = Color.White, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+        } else {
+            // 3. Recommendation Card Hero
+            bestChannel?.let { best ->
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    color = BlynkBlueTint,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, BlynkBlue.copy(alpha = 0.4f))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.CheckCircle,
+                            contentDescription = null,
+                            tint = BlynkBlue,
+                            modifier = Modifier.size(32.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = "Rekomendasi Terbaik: Kanal ${best.channel}",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = BlynkBlue
+                            )
+                            Text(
+                                text = "Kanal ${best.channel} (${best.frequencyMhz} MHz) paling minim gangguan tetangga dengan skor rating ${best.stars}/10 bintang.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(14.dp))
+            }
 
-        // 4. Rating List
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            items(ratings, key = { it.channel }) { item ->
-                ChannelRatingItemCard(item = item)
+            // 4. Rating List
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                items(ratings, key = { it.channel }) { item ->
+                    ChannelRatingItemCard(item = item)
+                }
             }
         }
     }
