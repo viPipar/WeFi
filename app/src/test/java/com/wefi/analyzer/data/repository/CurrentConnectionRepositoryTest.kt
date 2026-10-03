@@ -50,4 +50,16 @@ class CurrentConnectionRepositoryTest {
         assertTrue(info.isConnected)
         assertEquals("Wi-Fi Terhubung", info.accessPoint?.displaySsid)
     }
+
+    @Test
+    fun connectedNetworkInfo_whenDisconnected_hasNoConnectedAp() {
+        val info = ConnectedNetworkInfo(
+            accessPoint = null,
+            linkSpeedMbps = 0,
+            ipAddress = "0.0.0.0",
+            gatewayIp = "0.0.0.0"
+        )
+        org.junit.Assert.assertFalse(info.isConnected)
+        org.junit.Assert.assertNull(info.accessPoint)
+    }
 }

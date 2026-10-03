@@ -68,8 +68,8 @@ class CurrentConnectionRepositoryImpl(
                 }
             }
 
-            networkCallback = callback
             connectivityManager?.registerNetworkCallback(networkRequest, callback)
+            networkCallback = callback
         } catch (e: Exception) {
             Log.w(TAG, "Gagal mendaftarkan network callback", e)
         }
@@ -81,9 +81,10 @@ class CurrentConnectionRepositoryImpl(
         networkCallback?.let { callback ->
             try {
                 connectivityManager?.unregisterNetworkCallback(callback)
-                networkCallback = null
             } catch (e: Exception) {
                 Log.w(TAG, "Gagal melepas network callback", e)
+            } finally {
+                networkCallback = null
             }
         }
     }
@@ -111,9 +112,10 @@ class CurrentConnectionRepositoryImpl(
             val gateway = dhcp?.let { formatIpAddress(it.gateway) } ?: "0.0.0.0"
             val dns1 = dhcp?.let { formatIpAddress(it.dns1) } ?: "0.0.0.0"
 
-            val hasValidConnection = isWifiTransport || (ip != "0.0.0.0") || (wifiInfo != null && wifiInfo.networkId != -1)
+            val isDisconnectedDummy = wifiInfo == null || wifiInfo.networkId == -1 || wifiInfo.ssid == "<unknown ssid>"
+            val hasValidConnection = isWifiTransport && (ip != "0.0.0.0" || !isDisconnectedDummy)
 
-            if (!hasValidConnection && wifiInfo == null) {
+            if (!hasValidConnection) {
                 _connectionInfo.value = ConnectedNetworkInfo()
                 return
             }
